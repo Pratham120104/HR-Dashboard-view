@@ -58,9 +58,11 @@ const DashboardOverview = () => {
 
   return (
     <div className="p-8 bg-gray-50 min-h-screen text-gray-800">
-      <h1 className="text-2xl font-semibold mb-8 text-[#004080]">
-        HR Dashboard Overview
-      </h1>
+      <div className="text-left mb-12">
+        <h1 className="text-5xl font-bold text-[#004080] mb-4">
+          Welcome to HR Dashboard,
+        </h1>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {cards.map((card, index) => (

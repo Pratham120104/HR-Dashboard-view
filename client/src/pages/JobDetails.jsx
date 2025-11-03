@@ -60,7 +60,7 @@ const JobDetail = () => {
         <div className="flex flex-wrap gap-4 text-gray-600 text-sm mb-6">
           {job.location && <span>{job.location}</span>}
           {job.type && <span>• {job.type}</span>}
-          {job.duration && <span>• Duration: {job.duration}</span>}
+          {job.duration && <span>• Level: {job.duration}</span>}
           {job.salaryRange && <span>💰 {job.salaryRange}</span>}
         </div>
 
@@ -82,11 +82,11 @@ const JobDetail = () => {
           </>
         )}
 
-        {/* Job Role */}
-        {job.role && (
+        {/* Job Role / Position */}
+        {job.position && (
           <>
             <h3 className="text-xl font-semibold mb-2">Job role</h3>
-            <p className="text-gray-700 mb-6">{job.role}</p>
+            <p className="text-gray-700 mb-6">{job.position}</p>
           </>
         )}
 
@@ -140,7 +140,7 @@ const JobDetail = () => {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Full Name *</label>
+            <label className="block text-sm font-bold mb-1">Full Name *</label>
             <input
               type="text"
               name="name"
@@ -152,7 +152,7 @@ const JobDetail = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Email Address *</label>
+            <label className="block text-sm font-bold mb-1">Email Address *</label>
             <input
               type="email"
               name="email"
@@ -164,7 +164,7 @@ const JobDetail = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Phone Number *</label>
+            <label className="block text-sm font-bold mb-1">Phone Number *</label>
             <input
               type="tel"
               name="phone"
@@ -178,7 +178,7 @@ const JobDetail = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Upload Resume *</label>
+            <label className="block text-sm font-bold mb-1">Upload Resume *</label>
             <input
               type="file"
               name="resume"
@@ -189,7 +189,7 @@ const JobDetail = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Any comments *</label>
+            <label className="block text-sm font-bold mb-1">Any comments *</label>
             <textarea
               name="comments"
               value={formData.comments}
