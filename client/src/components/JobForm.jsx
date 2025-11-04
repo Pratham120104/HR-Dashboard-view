@@ -215,7 +215,7 @@ const JobForm = () => {
           </div>
         ))}
 
-        {/* Application link (optional) */}
+        {/* Application link (optional)
         <div className="md:col-span-2">
           <label className="block text-gray-700 mb-2">How to apply (optional URL)</label>
           <input
@@ -226,7 +226,7 @@ const JobForm = () => {
             placeholder="https://example.com/apply"
             className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-[#047B7B]"
           />
-        </div>
+        </div> */}
 
         {/* Type */}
         <div>
