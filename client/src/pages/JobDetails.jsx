@@ -166,6 +166,13 @@ const JobDetail = () => {
           </>
         )}
 
+        {/* How to apply */}
+    
+            <section>
+                  <h3 className="text-xl font-semibold mb-2">How to apply</h3>
+                  <p className="leading-relaxed mb-6">Send your updated resume to sravani@gyannidhi.in with subject "Application – AI Engineer Intern" or Fill the beside Form.</p>
+                </section>
+
         {/* Tags */}
         {(job.tags || job.skills)?.length > 0 && (
           <>

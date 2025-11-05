@@ -9,12 +9,20 @@ const CareersPage = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const loadJobs = async () => {
-      const res = await fetchJobs();
-      setJobs(res);
-    };
-    loadJobs();
-  }, []);
+  const loadJobs = async () => {
+    const res = await fetchJobs();
+    setJobs(res);
+  };
+
+  loadJobs();
+
+  // 👇 Auto-refresh when a new job is posted
+  const handleJobPosted = () => loadJobs();
+  window.addEventListener("jobPosted", handleJobPosted);
+
+  return () => window.removeEventListener("jobPosted", handleJobPosted);
+}, []);
+
 
   const filteredJobs = jobs.filter((job) => {
     const term = searchTerm.trim().toLowerCase();

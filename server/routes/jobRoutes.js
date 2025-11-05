@@ -8,16 +8,10 @@ import {
 
 const router = express.Router();
 
-// Create a new job
-router.post("/", createJob);
-
-// Get all jobs
-router.get("/", getJobs);
-
-// ✅ Get a single job by ID (for JobDetail.jsx)
-router.get("/:id", getJobById);
-
-// Delete a job
-router.delete("/:id", deleteJob);
+// 🟢 Routes
+router.post("/", createJob);         // Create a new job
+router.get("/", getJobs);            // Get all jobs
+router.get("/:id", getJobById);      // Get job by ID
+router.delete("/:id", deleteJob);    // Delete job by ID
 
 export default router;

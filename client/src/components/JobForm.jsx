@@ -106,6 +106,8 @@ const JobForm = () => {
       setIsSubmitting(true);
       await createJob(payload);
       toast.success("Job created successfully");
+      // 👇 Notify other components (like CareersPage)
+      window.dispatchEvent(new Event("jobPosted"));
       setFormData({
         title: "",
         type: "",
