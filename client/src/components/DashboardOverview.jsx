@@ -57,7 +57,8 @@ const DashboardOverview = () => {
   ];
 
   return (
-    <div className="p-8 bg-gray-50 min-h-screen text-gray-800">
+  <div className="p-8 bg-gray-50 min-h-screen text-gray-800 flex justify-center">
+    <div className="w-full max-w-6xl">
       <div className="text-left mb-12">
         <h1 className="text-5xl font-bold text-[#004080] mb-4">
           Welcome to HR Dashboard,
@@ -81,7 +82,8 @@ const DashboardOverview = () => {
         ))}
       </div>
     </div>
-  );
+  </div>
+);
 };
 
 export default DashboardOverview;

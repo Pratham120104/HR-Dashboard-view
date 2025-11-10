@@ -108,9 +108,27 @@ const JobDetail = () => {
   };
 
   if (loading) return <div className="text-center py-10">Loading...</div>;
-  if (error)
-    return <div className="text-center py-10 text-red-500">{error}</div>;
+  if (error) return <div className="text-center py-10 text-red-500">{error}</div>;
   if (!job) return null;
+
+  // Normalize benefits to a simple array for rendering
+  const benefitsArray = Array.isArray(job.benefits)
+    ? job.benefits
+    : typeof job.benefits === "string" && job.benefits.trim()
+    ? job.benefits.split("\n").filter(Boolean)
+    : [];
+
+  // Normalize required skills (prefer explicit array, else try to parse from text if needed)
+  const requiredSkillsArray = Array.isArray(job.requiredSkills)
+    ? job.requiredSkills
+    : [];
+
+  // Tags display source
+  const tagList = Array.isArray(job.tags) && job.tags.length
+    ? job.tags
+    : Array.isArray(job.skills) && job.skills.length
+    ? job.skills
+    : [];
 
   return (
     <div className="max-w-[1600px] mx-auto mt-8 grid grid-cols-1 md:grid-cols-3 gap-10">
@@ -123,18 +141,22 @@ const JobDetail = () => {
           {job.location && <span>{job.location}</span>}
           {job.type && <span>• {job.type}</span>}
           {job.duration && <span>• Level: {job.duration}</span>}
+          {job.experience && <span>• Experience: {job.experience}</span>}
           {job.salaryRange && <span>💰 {job.salaryRange}</span>}
+          {job.trainingPeriod && <span>• Training: {job.trainingPeriod}</span>}
         </div>
 
         {/* Overview */}
         {job.overview && (
           <>
             <h3 className="text-xl font-semibold mb-2">Overview</h3>
-            <p className="text-gray-700 mb-6 leading-relaxed">{job.overview}</p>
+            <p className="text-gray-700 mb-6 leading-relaxed whitespace-pre-line">
+              {job.overview}
+            </p>
           </>
         )}
 
-        {/* Description */}
+        {/* Full Description (uses `description`) */}
         {job.description && (
           <>
             <h3 className="text-xl font-semibold mb-2">Full description</h3>
@@ -144,41 +166,66 @@ const JobDetail = () => {
           </>
         )}
 
-        {/* Required Skills */}
-        {job.requirements && (
+        {/* Job Role */}
+        {job.jobRole && (
+          <>
+            <h3 className="text-xl font-semibold mb-2">Job role</h3>
+            <p className="text-gray-700 mb-6 leading-relaxed whitespace-pre-line">
+              {job.jobRole}
+            </p>
+          </>
+        )}
+
+        {/* Required Skills (array) */}
+        {requiredSkillsArray.length > 0 && (
           <>
             <h3 className="text-xl font-semibold mb-2">Required skills</h3>
             <ul className="list-disc list-inside text-gray-700 mb-6">
-              {job.requirements.split("\n").map((req, i) => (
+              {requiredSkillsArray.map((req, i) => (
                 <li key={i}>{req}</li>
               ))}
             </ul>
           </>
         )}
 
-        {/* Benefits */}
-        {job.benefits && (
+        {/* Requirements (free text, if you still send it separately) */}
+        {job.requirements && (
           <>
-            <h3 className="text-xl font-semibold mb-2">Benefits</h3>
+            <h3 className="text-xl font-semibold mb-2">Additional requirements</h3>
             <div className="bg-gray-50 border rounded-lg p-4 mb-6 text-gray-700 whitespace-pre-line">
-              {job.benefits}
+              {job.requirements}
             </div>
           </>
         )}
 
+        {/* Benefits (array or text split into items) */}
+        {benefitsArray.length > 0 && (
+          <>
+            <h3 className="text-xl font-semibold mb-2">Benefits</h3>
+            <ul className="list-disc list-inside text-gray-700 mb-6">
+              {benefitsArray.map((b, i) => (
+                <li key={i}>{b}</li>
+              ))}
+            </ul>
+          </>
+        )}
+
         {/* How to apply */}
-    
-            <section>
-                  <h3 className="text-xl font-semibold mb-2">How to apply</h3>
-                  <p className="leading-relaxed mb-6">Send your updated resume to sravani@gyannidhi.in with subject "Application – AI Engineer Intern" or Fill the beside Form.</p>
-                </section>
+        {job.howToApply && (
+          <>
+            <h3 className="text-xl font-semibold mb-2">How to apply</h3>
+            <p className="leading-relaxed mb-6 whitespace-pre-line">
+              {job.howToApply}
+            </p>
+          </>
+        )}
 
         {/* Tags */}
-        {(job.tags || job.skills)?.length > 0 && (
+        {tagList.length > 0 && (
           <>
             <h3 className="text-xl font-semibold mb-2">Tags</h3>
             <div className="flex flex-wrap gap-2 mb-6">
-              {(job.tags || job.skills).map((t, i) => (
+              {tagList.map((t, i) => (
                 <span key={i} className="text-xs bg-gray-100 px-2 py-1 rounded">
                   {t}
                 </span>
