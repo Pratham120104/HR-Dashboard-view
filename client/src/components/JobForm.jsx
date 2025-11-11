@@ -1,146 +1,215 @@
 // src/pages/JobForm.jsx
-import React, { useState, useEffect } from "react";
-import { createJob, fetchJobs, deleteJob } from "../services/api";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { createJob } from "../services/api";
 import toast from "react-hot-toast";
-import Select from "react-select";
+import CreatableSelect from "react-select/creatable";
 
-/**
- * This JobForm covers all fields used by:
- * - Static Job Detail (jobRole, fullDescription, requiredSkills[], benefits[], howToApply, experience)
- * - Dynamic Job Detail (overview, description, requirements, tags, salaryRange, duration, etc.)
- *
- * Payload mapping summary (backend-friendly):
- * - title                  -> title
- * - companyName            -> companyName
- * - position               -> position
- * - department             -> department
- * - type                   -> type ("Full-time" | "Internship")
- * - location               -> location
- * - stipend                -> salaryRange
- * - level                  -> duration
- * - trainingPeriod         -> trainingPeriod
- * - overview               -> overview
- * - fullDescription        -> description (app keeps one long description field)
- * - jobRole                -> jobRole
- * - requirements (text)    -> requirements (string; optional; we also generate from requiredSkills[])
- * - requiredSkills[]       -> requiredSkills (array) + appended into requirements string for compatibility
- * - benefits[]             -> benefits (string joined by newline)
- * - howToApply             -> howToApply
- * - tags[] (keywords)      -> tags + skills
- */
-
-const SKILLS_LIBRARY = [
-  "JavaScript",
-  "React",
-  "Node.js",
-  "Express",
-  "MongoDB",
-  "TypeScript",
-  "HTML",
-  "CSS",
-  "Python",
-  "Django",
-  "SQL",
-  "AWS",
-  "Docker",
-  "KiCad",
-  "Altium",
-  "Embedded C",
-  "CAN",
-  "SPI",
-  "I2C",
+const DEPARTMENT_OPTIONS = [
+  "Engineering",
+  "Product",
+  "Research",
+  "Training",
+  "Marketing",
+  "Quality Assurance",
+  "Machine Learning",
+  "Artificial Intelligence",
+  "Education",
 ];
 
-const EXPERIENCE_OPTIONS = [
-  { value: "Entry Level", label: "Entry Level" },
-  { value: "Mid Level", label: "Mid Level" },
-  { value: "Senior Level", label: "Senior Level" },
-  { value: "Lead / Manager", label: "Lead / Manager" },
-];
+const OVERVIEW_MAX = 400;
+const DESCRIPTION_MAX = 5000;
+const LOCAL_DRAFT_KEY = "jobform.v4.draft";
+
+const sanitize = (s) =>
+  (s || "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+
+const uniqueArray = (arr) =>
+  Array.from(new Set((arr || []).map((v) => sanitize(v)))).filter(Boolean);
+
+/* ---------- Bullet List Input (Enter to add) ---------- */
+const ListInput = ({ id, label, placeholder, items, onChange, hint }) => {
+  const [val, setVal] = useState("");
+
+  const add = useCallback(() => {
+    const cleaned = sanitize(val);
+    if (!cleaned) return;
+    onChange(uniqueArray([...(items || []), cleaned]));
+    setVal("");
+  }, [val, items, onChange]);
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      add();
+    }
+  };
+
+  const removeAt = (idx) => {
+    onChange((items || []).filter((_, i) => i !== idx));
+  };
+
+  return (
+    <div className="md:col-span-2">
+      <label htmlFor={id} className="block text-gray-700 mb-2">
+        {label}
+      </label>
+      <input
+        id={id}
+        type="text"
+        value={val}
+        onChange={(e) => setVal(e.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder={placeholder}
+        className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-[#047B7B]"
+      />
+      {hint && <div className="text-xs text-gray-500 mt-1">{hint}</div>}
+      <ul className="mt-3 list-disc list-inside space-y-1">
+        {(items || []).map((li, i) => (
+          <li key={`${li}-${i}`} className="text-gray-800 flex items-start gap-2">
+            <span className="flex-1">{li}</span>
+            <button
+              type="button"
+              onClick={() => removeAt(i)}
+              className="text-gray-500 hover:text-gray-700 text-sm"
+              aria-label={`Remove item ${li}`}
+              title="Remove"
+            >
+              ✕
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
+/* ---------- Salary/Stipend formatting ---------- */
+const formatCurrency = (n) => {
+  const num = Number(String(n).replace(/[^0-9.]/g, ""));
+  if (!isFinite(num)) return "";
+  return `₹${num.toLocaleString("en-IN")}`;
+};
 
 const JobForm = () => {
-  const [formData, setFormData] = useState({
-    // Core
-    title: "",
-    companyName: "GyanNidhi Innovations Pvt. Ltd.",
-    position: "",
-    department: "",
-    type: "", // "Full-time" | "Internship"
-    level: "", // maps to duration
-    location: "",
-    stipend: "", // maps to salaryRange
-    trainingPeriod: "",
+  // mode: "Job" or "Internship"
+  const [mode, setMode] = useState("Job");
 
-    // Content
-    overview: "",
-    fullDescription: "", // maps to description
-    jobRole: "",
-    requirements: "", // free text
-    requiredSkills: [], // array chips
-    benefits: [], // array chips
-    howToApply: "",
+  const [formData, setFormData] = useState(() => {
+    try {
+      const draft = JSON.parse(localStorage.getItem(LOCAL_DRAFT_KEY) || "null");
+      if (draft && typeof draft === "object") return draft;
+    } catch (_) {}
+    return {
+      // Core
+      title: "",
+      companyName: "GyanNidhi Innovations Pvt. Ltd.",
+      department: "Engineering",
+      type: "", // "Full-time" | "Part-time" | "Internship"
+      level: "", // only when type === "Full-time"
+      location: "",
 
-    // Tags / Keywords
-    tags: [], // react-select multi
-    experience: "", // text value matching experienceNames map in static version
+      // Admin
+      status: "Open", // Open | Closed
+      published: true,
+
+      // Training period (mostly internship)
+      trainingPeriod: "",
+
+      // Compensation (structured UI -> string)
+      salaryMin: "",
+      salaryMax: "",
+      salaryPeriod: "per year", // for Job
+      stipendAmt: "",
+      stipendPeriod: "per month", // for Internship
+
+      // Content
+      overview: "",
+      fullDescription: "",
+      jobRole: "",
+
+      // Lists
+      requiredSkills: [],
+      benefits: [],
+
+      // How to apply
+      howToApply: "",
+
+      // Tags / Keywords (custom)
+      tags: [],
+
+      // Optional
+      experience: "",
+    };
   });
 
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState(null);
-  const [jobs, setJobs] = useState([]);
+  const firstErrorRef = useRef(null);
 
-  // ---------- helpers ----------
   const updateField = (name, value) => {
-    setFormData((s) => ({ ...s, [name]: value }));
+    setFormData((s) => {
+      const next = { ...s, [name]: value };
+      if (name === "type") {
+        if (value === "Full-time") {
+          // keep level; required in validation
+        } else {
+          next.level = ""; // not required for part-time or internship
+        }
+      }
+      return next;
+    });
   };
 
-  const validate = () => {
-    const e = {};
-    if (!formData.title) e.title = "Title is required";
-    if (!formData.department) e.department = "Department is required";
-    if (!formData.location) e.location = "Location is required";
-    if (!formData.type) e.type = "Type is required";
-    if (formData.type === "Full-time" && !formData.level)
-      e.level = "Level is required for full-time roles";
-    // Add any strict requirements here if needed
-    return e;
-  };
-
-  const removeFromArrayField = (field, index) => {
-    setFormData((s) => ({
-      ...s,
-      [field]: s[field].filter((_, i) => i !== index),
-    }));
-  };
-
-  const handleChipAdd = (e, field) => {
-    if (!e.target.value) return;
-    if (e.key === "Enter" || e.key === "," || e.key === "Tab") {
-      e.preventDefault();
-      const value = e.target.value.trim().replace(/,$/, "");
-      if (!value) return;
-      setFormData((s) => ({
-        ...s,
-        [field]: [...(s[field] || []), value],
-      }));
-      e.target.value = "";
-    }
-  };
-
-  const loadJobs = async () => {
-    const res = await fetchJobs();
-    if (Array.isArray(res)) setJobs(res);
-    else if (res && res.data) setJobs(res.data);
-  };
-
+  // Mode affects type defaults
   useEffect(() => {
-    loadJobs();
-  }, []);
+    setFormData((s) => {
+      const next = { ...s };
+      if (mode === "Internship") {
+        next.type = "Internship";
+        next.level = "";
+      } else if (mode === "Job") {
+        if (next.type === "Internship" || !next.type) next.type = "Full-time";
+      }
+      return next;
+    });
+  }, [mode]);
 
-  // ---------- submit ----------
+  // Persist draft
+  useEffect(() => {
+    const tid = setTimeout(() => {
+      try {
+        localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(formData));
+      } catch (_) {}
+    }, 250);
+    return () => clearTimeout(tid);
+  }, [formData]);
+
+  const validate = useCallback(() => {
+    const e = {};
+    const s = (k) => sanitize(formData[k]);
+    if (!s("title")) e.title = "Title is required";
+    if (!s("department")) e.department = "Department is required";
+    if (!s("location")) e.location = "Location is required";
+    if (!formData.type) e.type = "Type is required";
+    if (!["Open", "Closed"].includes(formData.status)) e.status = "Status is required";
+
+    if (mode === "Job") {
+      if (formData.type === "Full-time" && !formData.level)
+        e.level = "Level is required for full-time roles";
+      if (!s("salaryMin") && !s("salaryMax")) {
+        e.salary = "Provide a salary amount (min and/or max)";
+      }
+    } else {
+      if (!s("stipendAmt")) e.stipend = "Provide a stipend amount";
+    }
+
+    if (s("overview").length > OVERVIEW_MAX)
+      e.overview = `Overview must be ≤ ${OVERVIEW_MAX} characters`;
+    if (s("fullDescription").length > DESCRIPTION_MAX)
+      e.fullDescription = `Description must be ≤ ${DESCRIPTION_MAX} characters`;
+    return e;
+  }, [formData, mode]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -148,58 +217,62 @@ const JobForm = () => {
     setErrors(v);
     if (Object.keys(v).length) {
       toast.error("Please fix the highlighted errors.");
+      firstErrorRef.current?.focus();
       return;
     }
 
-    // Compose description & requirements for compatibility
-    const description = formData.fullDescription || "";
-    const reqFromSkills =
-      formData.requiredSkills && formData.requiredSkills.length
-        ? `\n\nRequired Skills:\n- ${formData.requiredSkills.join("\n- ")}`
-        : "";
-    const finalRequirements =
-      (formData.requirements || "").trim() + reqFromSkills;
+    // Build salaryRange/stipend string from structured inputs
+    let salaryRange = "";
+    let duration = ""; // mapped from level (for full-time)
+    if (mode === "Job") {
+      const min = sanitize(formData.salaryMin);
+      const max = sanitize(formData.salaryMax);
+      const per = sanitize(formData.salaryPeriod || "per year");
+      const minFmt = min ? formatCurrency(min) : "";
+      const maxFmt = max ? formatCurrency(max) : "";
+      if (minFmt && maxFmt) salaryRange = `${minFmt}–${maxFmt} ${per}`;
+      else if (minFmt) salaryRange = `${minFmt} ${per}`;
+      else if (maxFmt) salaryRange = `${maxFmt} ${per}`;
+      if (formData.type === "Full-time") duration = sanitize(formData.level);
+    } else {
+      const amt = sanitize(formData.stipendAmt);
+      const per = sanitize(formData.stipendPeriod || "per month");
+      const amtFmt = amt ? formatCurrency(amt) : "";
+      salaryRange = amtFmt ? `${amtFmt} ${per}` : "";
+      duration = ""; // not used for internships
+    }
 
-    // Benefits string (for your JobDetail v2, it reads benefits as text block)
-    const benefitsText =
-      formData.benefits && formData.benefits.length
-        ? formData.benefits.join("\n")
-        : formData.benefits || "";
-
+    // Build payload
     const payload = {
-      // Basic
-      title: formData.title,
-      companyName: formData.companyName,
-      position: formData.position,
-      department:
-        formData.department ||
-        formData.position ||
-        formData.companyName ||
-        "General",
-      type: formData.type,
-      location: formData.location,
+      title: sanitize(formData.title),
+      companyName: "GyanNidhi Innovations Pvt. Ltd.",
+      department: sanitize(formData.department) || "Engineering",
+      type: formData.type, // "Full-time" | "Part-time" | "Internship"
+      location: sanitize(formData.location),
 
-      // Financial / seniority mapping
-      salaryRange: formData.stipend || "",
-      duration: formData.level || "",
+      // Admin
+      status: formData.status, // Open | Closed
+      published: !!formData.published,
 
-      trainingPeriod: formData.trainingPeriod || "",
+      salaryRange, // formatted string
+      duration, // level for full-time only
 
-      // Content
-      overview: formData.overview || "",
-      description, // fullDescription stored as `description`
-      jobRole: formData.jobRole || "",
-      requirements: finalRequirements, // string, includes skills list
-      requiredSkills: formData.requiredSkills || [], // array preserved too
-      benefits: benefitsText, // ensure JobDetail can render
-      howToApply: formData.howToApply || "",
+      trainingPeriod: sanitize(formData.trainingPeriod),
 
-      // Tags / Keywords
-      tags: formData.tags || [],
-      skills: formData.tags || [],
+      overview: sanitize(formData.overview),
+      description: sanitize(formData.fullDescription),
+      jobRole: sanitize(formData.jobRole),
 
-      // Experience (optional, used by static JobDetail mapping)
-      experience: formData.experience || "",
+      requiredSkills: uniqueArray(formData.requiredSkills),
+      benefits: uniqueArray(formData.benefits),
+
+      howToApply: sanitize(formData.howToApply),
+
+      // custom tags (creatable). Also mirror to skills for compatibility.
+      tags: uniqueArray(formData.tags),
+      skills: uniqueArray(formData.tags),
+
+      experience: sanitize(formData.experience),
     };
 
     try {
@@ -207,32 +280,38 @@ const JobForm = () => {
       await createJob(payload);
       toast.success("Job created successfully");
 
-      // Notify other views (e.g., CareersPage) to refresh
-      window.dispatchEvent(new Event("jobPosted"));
-
-      // Reset form
-      setFormData({
+      // Clear form
+      const reset = {
         title: "",
         companyName: "GyanNidhi Innovations Pvt. Ltd.",
-        position: "",
-        department: "",
-        type: "",
+        department: "Engineering",
+        type: mode === "Job" ? "Full-time" : "Internship",
         level: "",
         location: "",
-        stipend: "",
         trainingPeriod: "",
+        status: "Open",
+        published: true,
+        salaryMin: "",
+        salaryMax: "",
+        salaryPeriod: "per year",
+        stipendAmt: "",
+        stipendPeriod: "per month",
         overview: "",
         fullDescription: "",
         jobRole: "",
-        requirements: "",
         requiredSkills: [],
         benefits: [],
         howToApply: "",
         tags: [],
         experience: "",
-      });
+      };
+      setFormData(reset);
+      try {
+        localStorage.removeItem(LOCAL_DRAFT_KEY);
+      } catch (_) {}
 
-      loadJobs();
+      // Optional: navigate user to manage page
+      // window.location.href = "/admin/jobs";
     } catch (err) {
       console.error(err);
       toast.error("Failed to create job");
@@ -241,76 +320,197 @@ const JobForm = () => {
     }
   };
 
-  const handleDelete = async (id) => {
-    setDeleteTarget(id);
-    setShowDeleteConfirm(true);
-  };
-
-  const confirmDelete = async () => {
-    try {
-      setIsDeleting(true);
-      await deleteJob(deleteTarget);
-      toast.success("Job deleted");
-      setShowDeleteConfirm(false);
-      setDeleteTarget(null);
-      loadJobs();
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to delete job");
-    } finally {
-      setIsDeleting(false);
+  // focus first invalid input
+  const firstInvalidId = useMemo(() => {
+    const order = [
+      "title",
+      "department",
+      "location",
+      "type",
+      "status",
+      "level",
+      mode === "Job" ? "salaryMin" : "stipendAmt",
+      "overview",
+      "fullDescription",
+    ];
+    for (const key of order) {
+      if (
+        errors[key] ||
+        (key === "salaryMin" && errors.salary) ||
+        (key === "stipendAmt" && errors.stipend)
+      )
+        return key;
     }
-  };
+    return null;
+  }, [errors, mode]);
 
-  // ---------- render ----------
+  useEffect(() => {
+    if (!firstInvalidId) return;
+    const el = document.getElementById(firstInvalidId);
+    if (el) {
+      firstErrorRef.current = el;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [firstInvalidId]);
+
+  const overviewLen = (formData.overview || "").trim().length;
+  const descLen = (formData.fullDescription || "").trim().length;
+
+  /* ---------- Shared tiny input ---------- */
+  const LabeledInput = ({ id, label, ...rest }) => (
+    <div>
+      <label htmlFor={id} className="block text-gray-700 mb-2">
+        {label}
+      </label>
+      <input
+        id={id}
+        {...rest}
+        className={`w-full border rounded-lg p-3 focus:outline-none focus:ring-2 ${
+          errors[id] || errors.salary || errors.stipend
+            ? "border-red-400 focus:ring-red-200"
+            : "border-gray-300 focus:ring-[#047B7B]"
+        }`}
+        aria-invalid={!!errors[id]}
+      />
+      {errors[id] && <p className="text-sm text-red-500 mt-1">{errors[id]}</p>}
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 flex flex-col items-center py-10 px-4">
-      <header className="text-center mb-10">
-        <h1 className="text-4xl font-bold text-[#004080] mb-2">
-          GyanNidhi HR Portal
-        </h1>
-        <p className="text-gray-600 text-lg">
-          Create a new role or internship opportunity.
-        </p>
+      <header className="text-center mb-6">
+        <h1 className="text-4xl font-bold text-[#004080] mb-2">GyanNidhi HR Portal</h1>
+        <p className="text-gray-600 text-lg">Create a new role or internship opportunity.</p>
+
+        {/* Quick link to Manage Jobs */}
+        <a
+          href="/admin/jobs"
+          className="inline-block mt-4 text-sm text-blue-700 underline hover:no-underline"
+        >
+          Go to Manage Jobs →
+        </a>
       </header>
+
+      {/* Mode Toggle */}
+      <div className="w-full max-w-5xl mb-4">
+        <div className="flex w-full bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+          <button
+            type="button"
+            onClick={() => setMode("Job")}
+            className={`flex-1 py-3 text-center font-medium ${
+              mode === "Job" ? "bg-[#004080] text-white" : "text-[#004080] hover:bg-blue-50"
+            }`}
+          >
+            Job
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("Internship")}
+            className={`flex-1 py-3 text-center font-medium ${
+              mode === "Internship" ? "bg-[#004080] text-white" : "text-[#004080] hover:bg-blue-50"
+            }`}
+          >
+            Internship
+          </button>
+        </div>
+      </div>
+
+      {/* Error summary */}
+      {Object.keys(errors).length > 0 && (
+        <div
+          className="w-full max-w-5xl mb-4 border border-red-200 bg-red-50 text-red-800 rounded-lg p-3"
+          role="alert"
+          aria-live="polite"
+        >
+          <p className="font-semibold mb-1">Please fix the following:</p>
+          <ul className="list-disc list-inside text-sm">
+            {Object.entries(errors).map(([k, v]) => (
+              <li key={k}>{v}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <form
         onSubmit={handleSubmit}
         className="bg-white shadow-xl rounded-2xl p-8 w-full max-w-5xl grid grid-cols-1 md:grid-cols-2 gap-6 border border-gray-100"
+        noValidate
       >
-        {/* --- Basic fields --- */}
-        {[
-          { label: "Job Title", name: "title", required: true },
-          { label: "Position", name: "position" },
-          { label: "Department", name: "department", required: true },
-          { label: "Location", name: "location", required: true },
-          { label: "Training Period", name: "trainingPeriod" },
-          { label: "Stipend / Salary Range", name: "stipend" },
-        ].map((f) => (
-          <div key={f.name}>
-            <label className="block text-gray-700 mb-2">{f.label}</label>
-            <input
-              type="text"
-              name={f.name}
-              value={formData[f.name]}
-              onChange={(e) => updateField(f.name, e.target.value)}
-              required={!!f.required}
-              className={`w-full border rounded-lg p-3 focus:outline-none focus:ring-2 ${
-                errors[f.name]
-                  ? "border-red-400 focus:ring-red-200"
-                  : "border-gray-300 focus:ring-[#047B7B]"
-              }`}
-            />
-            {errors[f.name] && (
-              <p className="text-sm text-red-500 mt-1">{errors[f.name]}</p>
-            )}
-          </div>
-        ))}
-
-        {/* Company (locked to GN) */}
+        {/* Job Title */}
         <div>
-          <label className="block text-gray-700 mb-2">Company Name</label>
+          <label htmlFor="title" className="block text-gray-700 mb-2">
+            Job Title <span className="text-red-500">*</span>
+          </label>
+          <input
+            id="title"
+            type="text"
+            name="title"
+            value={formData.title}
+            onChange={(e) => updateField("title", e.target.value)}
+            required
+            aria-invalid={!!errors.title}
+            className={`w-full border rounded-lg p-3 focus:outline-none focus:ring-2 ${
+              errors.title ? "border-red-400 focus:ring-red-200" : "border-gray-300 focus:ring-[#047B7B]"
+            }`}
+          />
+          {errors.title && <p className="text-sm text-red-500 mt-1">{errors.title}</p>}
+        </div>
+
+        {/* Department */}
+        <div>
+          <label htmlFor="department" className="block text-gray-700 mb-2">
+            Department <span className="text-red-500">*</span>
+          </label>
           <select
+            id="department"
+            name="department"
+            value={formData.department}
+            onChange={(e) => updateField("department", e.target.value)}
+            className={`w-full border rounded-lg p-3 focus:outline-none focus:ring-2 ${
+              errors.department ? "border-red-400 focus:ring-red-200" : "border-gray-300 focus:ring-[#047B7B]"
+            }`}
+            required
+          >
+            {DEPARTMENT_OPTIONS.map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))}
+          </select>
+          {errors.department && <p className="text-sm text-red-500 mt-1">{errors.department}</p>}
+        </div>
+
+        {/* Location */}
+        <LabeledInput
+          id="location"
+          label={
+            <>
+              Location <span className="text-red-500">*</span>
+            </>
+          }
+          type="text"
+          name="location"
+          value={formData.location}
+          onChange={(e) => updateField("location", e.target.value)}
+        />
+
+        {/* Training Period (optional) */}
+        <LabeledInput
+          id="trainingPeriod"
+          label="Training Period"
+          type="text"
+          name="trainingPeriod"
+          value={formData.trainingPeriod}
+          onChange={(e) => updateField("trainingPeriod", e.target.value)}
+        />
+
+        {/* Company (locked) */}
+        <div>
+          <label htmlFor="companyName" className="block text-gray-700 mb-2">
+            Company Name
+          </label>
+          <select
+            id="companyName"
             name="companyName"
             value={formData.companyName}
             onChange={(e) => updateField("companyName", e.target.value)}
@@ -323,90 +523,208 @@ const JobForm = () => {
           </select>
         </div>
 
-        {/* Type */}
+        {/* Job Type */}
         <div>
-          <label className="block text-gray-700 mb-2">Job Type</label>
+          <label htmlFor="type" className="block text-gray-700 mb-2">
+            Job Type <span className="text-red-500">*</span>
+          </label>
           <select
+            id="type"
             name="type"
             value={formData.type}
             onChange={(e) => updateField("type", e.target.value)}
             className={`w-full border rounded-lg p-3 focus:outline-none focus:ring-2 ${
-              errors.type
-                ? "border-red-400 focus:ring-red-200"
-                : "border-gray-300 focus:ring-[#004080]"
+              errors.type ? "border-red-400 focus:ring-red-200" : "border-gray-300 focus:ring-[#004080]"
             }`}
             required
           >
-            <option value="" disabled>
-              Select type
-            </option>
-            <option value="Full-time">Full-time</option>
-            <option value="Internship">Internship</option>
+            {mode === "Job" ? (
+              <>
+                <option value="Full-time">Full-time</option>
+                <option value="Part-time">Part-time</option>
+              </>
+            ) : (
+              <option value="Internship">Internship</option>
+            )}
           </select>
-          {errors.type && (
-            <p className="text-sm text-red-500 mt-1">{errors.type}</p>
-          )}
+          {errors.type && <p className="text-sm text-red-500 mt-1">{errors.type}</p>}
         </div>
 
-        {/* Level (maps to duration) */}
+        {/* Level (only for Full-time) */}
+        {mode === "Job" && formData.type === "Full-time" && (
+          <div>
+            <label htmlFor="level" className="block text-gray-700 mb-2">
+              Level <span className="text-red-500">*</span>
+            </label>
+            <select
+              id="level"
+              name="level"
+              value={formData.level}
+              onChange={(e) => updateField("level", e.target.value)}
+              className={`w-full border rounded-lg p-3 focus:outline-none focus:ring-2 ${
+                errors.level ? "border-red-400 focus:ring-red-200" : "border-gray-300 focus:ring-[#047B7B]"
+              }`}
+              required
+            >
+              <option value="" disabled>
+                Select level
+              </option>
+              <option value="Entry">Entry</option>
+              <option value="Mid">Mid</option>
+              <option value="High">High</option>
+            </select>
+            {errors.level && <p className="text-sm text-red-500 mt-1">{errors.level}</p>}
+          </div>
+        )}
+
+        {/* Status & Published */}
         <div>
-          <label className="block text-gray-700 mb-2">Level</label>
+          <label htmlFor="status" className="block text-gray-700 mb-2">
+            Status <span className="text-red-500">*</span>
+          </label>
           <select
-            name="level"
-            value={formData.level}
-            onChange={(e) => updateField("level", e.target.value)}
+            id="status"
+            name="status"
+            value={formData.status}
+            onChange={(e) => updateField("status", e.target.value)}
             className={`w-full border rounded-lg p-3 focus:outline-none focus:ring-2 ${
-              errors.level
-                ? "border-red-400 focus:ring-red-200"
-                : "border-gray-300 focus:ring-[#047B7B]"
+              errors.status ? "border-red-400 focus:ring-red-200" : "border-gray-300 focus:ring-[#047B7B]"
             }`}
+            required
           >
-            <option value="" disabled>
-              Select level
-            </option>
-            <option value="Entry">Entry</option>
-            <option value="Mid">Mid</option>
-            <option value="High">High</option>
+            <option value="Open">Open</option>
+            <option value="Closed">Closed</option>
           </select>
-          {errors.level && (
-            <p className="text-sm text-red-500 mt-1">{errors.level}</p>
-          )}
+          {errors.status && <p className="text-sm text-red-500 mt-1">{errors.status}</p>}
         </div>
 
-        {/* Experience (for static mapping clarity) */}
-        <div>
-          <label className="block text-gray-700 mb-2">Experience</label>
-          <Select
-            isClearable
-            name="experience"
-            options={EXPERIENCE_OPTIONS}
-            value={
-              formData.experience
-                ? { value: formData.experience, label: formData.experience }
-                : null
-            }
-            onChange={(opt) => updateField("experience", opt?.value || "")}
-            placeholder="Select experience level (optional)"
+        <div className="flex items-center gap-2">
+          <input
+            id="published"
+            type="checkbox"
+            checked={!!formData.published}
+            onChange={(e) => updateField("published", e.target.checked)}
+            className="h-4 w-4 accent-[#004080]"
           />
+          <label htmlFor="published" className="text-gray-700">
+            Published
+          </label>
         </div>
 
-        {/* Overview */}
+        {/* ---------- Compensation ---------- */}
+        {mode === "Job" ? (
+          <>
+            <div>
+              <label className="block text-gray-700 mb-2">Salary (min)</label>
+              <input
+                id="salaryMin"
+                type="number"
+                min="0"
+                step="1000"
+                placeholder="e.g., 400000"
+                value={formData.salaryMin}
+                onChange={(e) => updateField("salaryMin", e.target.value)}
+                className={`w-full border rounded-lg p-3 focus:outline-none focus:ring-2 ${
+                  errors.salary ? "border-red-400 focus:ring-red-200" : "border-gray-300 focus:ring-[#047B7B]"
+                }`}
+              />
+            </div>
+            <div>
+              <label className="block text-gray-700 mb-2">Salary (max)</label>
+              <input
+                id="salaryMax"
+                type="number"
+                min="0"
+                step="1000"
+                placeholder="e.g., 800000"
+                value={formData.salaryMax}
+                onChange={(e) => updateField("salaryMax", e.target.value)}
+                className={`w-full border rounded-lg p-3 focus:outline-none focus:ring-2 ${
+                  errors.salary ? "border-red-400 focus:ring-red-200" : "border-gray-300 focus:ring-[#047B7B]"
+                }`}
+              />
+            </div>
+            <div>
+              <label className="block text-gray-700 mb-2">Salary period</label>
+              <select
+                value={formData.salaryPeriod}
+                onChange={(e) => updateField("salaryPeriod", e.target.value)}
+                className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-[#047B7B]"
+              >
+                <option value="per year">per year</option>
+                <option value="per month">per month</option>
+                <option value="per hour">per hour</option>
+              </select>
+              {errors.salary && <p className="text-sm text-red-500 mt-1">{errors.salary}</p>}
+            </div>
+          </>
+        ) : (
+          <>
+            <div>
+              <label className="block text-gray-700 mb-2">
+                Stipend amount <span className="text-red-500">*</span>
+              </label>
+              <input
+                id="stipendAmt"
+                type="number"
+                min="0"
+                step="500"
+                placeholder="e.g., 10000"
+                value={formData.stipendAmt}
+                onChange={(e) => updateField("stipendAmt", e.target.value)}
+                className={`w-full border rounded-lg p-3 focus:outline-none focus:ring-2 ${
+                  errors.stipend ? "border-red-400 focus:ring-red-200" : "border-gray-300 focus:ring-[#047B7B]"
+                }`}
+                required
+              />
+              {errors.stipend && <p className="text-sm text-red-500 mt-1">{errors.stipend}</p>}
+            </div>
+            <div>
+              <label className="block text-gray-700 mb-2">Stipend period</label>
+              <select
+                value={formData.stipendPeriod}
+                onChange={(e) => updateField("stipendPeriod", e.target.value)}
+                className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-[#047B7B]"
+              >
+                <option value="per month">per month</option>
+                <option value="per week">per week</option>
+                <option value="one-time">one-time</option>
+              </select>
+            </div>
+          </>
+        )}
+
+        {/* ---------- Overview & Description ---------- */}
         <div className="md:col-span-2">
-          <label className="block text-gray-700 mb-2">Overview</label>
+          <div className="flex items-baseline justify-between">
+            <label htmlFor="overview" className="block text-gray-700 mb-2">
+              Overview
+            </label>
+            <span className={`text-xs ${overviewLen > OVERVIEW_MAX ? "text-red-600" : "text-gray-500"}`}>
+              {overviewLen}/{OVERVIEW_MAX}
+            </span>
+          </div>
           <textarea
+            id="overview"
             name="overview"
             value={formData.overview}
             onChange={(e) => updateField("overview", e.target.value)}
             rows={2}
             placeholder="Short overview summary of the role"
-            className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-[#047B7B]"
+            aria-invalid={!!errors.overview}
+            className={`w-full border rounded-lg p-3 focus:outline-none focus:ring-2 ${
+              errors.overview ? "border-red-400 focus:ring-red-200" : "border-gray-300 focus:ring-[#047B7B]"
+            }`}
           />
+          {errors.overview && <p className="text-sm text-red-500 mt-1">{errors.overview}</p>}
         </div>
 
-        {/* Job Role (separate from title) */}
         <div className="md:col-span-2">
-          <label className="block text-gray-700 mb-2">Job Role</label>
+          <label htmlFor="jobRole" className="block text-gray-700 mb-2">
+            Job Role
+          </label>
           <textarea
+            id="jobRole"
             name="jobRole"
             value={formData.jobRole}
             onChange={(e) => updateField("jobRole", e.target.value)}
@@ -416,98 +734,63 @@ const JobForm = () => {
           />
         </div>
 
-        {/* Full Description (maps to description) */}
         <div className="md:col-span-2">
-          <label className="block text-gray-700 mb-2">
-            Full Description (will be saved as description)
-          </label>
+          <div className="flex items-baseline justify-between">
+            <label htmlFor="fullDescription" className="block text-gray-700 mb-2">
+              Full Description
+            </label>
+            <span className={`text-xs ${descLen > DESCRIPTION_MAX ? "text-red-600" : "text-gray-500"}`}>
+              {descLen}/{DESCRIPTION_MAX}
+            </span>
+          </div>
           <textarea
+            id="fullDescription"
             name="fullDescription"
             value={formData.fullDescription}
             onChange={(e) => updateField("fullDescription", e.target.value)}
             rows={5}
             placeholder="Full job role description, responsibilities, etc."
-            className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-[#047B7B]"
+            aria-invalid={!!errors.fullDescription}
+            className={`w-full border rounded-lg p-3 focus:outline-none focus:ring-2 ${
+              errors.fullDescription ? "border-red-400 focus:ring-red-200" : "border-gray-300 focus:ring-[#047B7B]"
+            }`}
           />
+          {errors.fullDescription && <p className="text-sm text-red-500 mt-1">{errors.fullDescription}</p>}
         </div>
 
-        {/* Requirements (free text) */}
-        <div className="md:col-span-2">
-          <label className="block text-gray-700 mb-2">Requirements (text)</label>
-          <textarea
-            name="requirements"
-            value={formData.requirements}
-            onChange={(e) => updateField("requirements", e.target.value)}
-            rows={3}
-            placeholder="Describe minimum requirements / responsibilities (free text)"
-            className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-[#047B7B]"
-          />
-        </div>
+        {/* ---------- Bullet Lists ---------- */}
+        <ListInput
+          id="requiredSkills"
+          label="Required Skills"
+          placeholder="Type a skill and press Enter"
+          items={formData.requiredSkills}
+          onChange={(next) =>
+            updateField(
+              "requiredSkills",
+              typeof next === "function" ? next(formData.requiredSkills) : next
+            )
+          }
+          hint="Examples: KiCad, Altium, Embedded C, I2C, SPI, CAN"
+        />
 
-        {/* Required Skills (chips) */}
+        <ListInput
+          id="benefits"
+          label="Benefits"
+          placeholder="Type a benefit and press Enter"
+          items={formData.benefits}
+          onChange={(next) =>
+            updateField("benefits", typeof next === "function" ? next(formData.benefits) : next)
+          }
+          hint="Keep each benefit short (≤ 40 characters)"
+        />
+
+        {/* ---------- How to apply ---------- */}
         <div className="md:col-span-2">
-          <label className="block text-gray-700 mb-2">
-            Required Skills (add with Enter or comma)
+          <label htmlFor="howToApply" className="block text-gray-700 mb-2">
+            How to apply
           </label>
-          <input
-            type="text"
-            onKeyDown={(e) => handleChipAdd(e, "requiredSkills")}
-            placeholder="Type a skill and press Enter"
-            className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-[#047B7B]"
-          />
-          <div className="mt-2 flex flex-wrap gap-2">
-            {formData.requiredSkills.map((s, i) => (
-              <span
-                key={`${s}-${i}`}
-                className="flex items-center bg-gray-100 px-3 py-1 rounded-full text-sm"
-              >
-                {s}
-                <button
-                  type="button"
-                  onClick={() => removeFromArrayField("requiredSkills", i)}
-                  className="ml-2 text-gray-500 hover:text-gray-700"
-                >
-                  &times;
-                </button>
-              </span>
-            ))}
-          </div>
-        </div>
-
-        {/* Benefits (chips) */}
-        <div className="md:col-span-2">
-          <label className="block text-gray-700 mb-2">
-            Benefits (add with Enter or comma)
-          </label>
-          <input
-            type="text"
-            onKeyDown={(e) => handleChipAdd(e, "benefits")}
-            placeholder="Type a benefit and press Enter"
-            className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-[#047B7B]"
-          />
-          <div className="mt-2 flex flex-wrap gap-2">
-            {formData.benefits.map((b, i) => (
-              <span
-                key={`${b}-${i}`}
-                className="flex items-center bg-gray-100 px-3 py-1 rounded-full text-sm"
-              >
-                {b}
-                <button
-                  type="button"
-                  onClick={() => removeFromArrayField("benefits", i)}
-                  className="ml-2 text-gray-500 hover:text-gray-700"
-                >
-                  &times;
-                </button>
-              </span>
-            ))}
-          </div>
-        </div>
-
-        {/* How to apply */}
-        <div className="md:col-span-2">
-          <label className="block text-gray-700 mb-2">How to apply</label>
           <textarea
+            id="howToApply"
             name="howToApply"
             value={formData.howToApply}
             onChange={(e) => updateField("howToApply", e.target.value)}
@@ -517,161 +800,79 @@ const JobForm = () => {
           />
         </div>
 
-        {/* Tags / Keywords */}
+        {/* ---------- Custom Tags (Creatable) ---------- */}
         <div className="md:col-span-2">
-          <label className="block text-gray-700 mb-2">Tags / Keywords</label>
-          <Select
+          <label htmlFor="tags" className="block text-gray-700 mb-2">
+            Tags / Keywords
+          </label>
+          <CreatableSelect
+            inputId="tags"
             isMulti
             name="tags"
-            options={SKILLS_LIBRARY.map((s) => ({ value: s, label: s }))}
-            value={formData.tags.map((t) => ({ value: t, label: t }))}
-            onChange={(selected) =>
-              updateField(
-                "tags",
-                selected ? selected.map((i) => i.value) : []
-              )
-            }
-            placeholder="Search and select tags/keywords..."
+            placeholder="Type a tag and press Enter"
+            value={(formData.tags || []).map((t) => ({ value: t, label: t }))}
+            onChange={(selected) => updateField("tags", selected ? selected.map((i) => i.value) : [])}
           />
-          {errors.tags && (
-            <p className="text-sm text-red-500 mt-2">{errors.tags}</p>
+          {formData.tags?.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {formData.tags.map((t, i) => (
+                <span key={`${t}-${i}`} className="text-xs bg-gray-100 px-2 py-1 rounded">
+                  {t}
+                </span>
+              ))}
+            </div>
           )}
-          <div className="mt-2 flex flex-wrap gap-2">
-            {formData.tags.map((t, i) => (
-              <span
-                key={`${t}-${i}`}
-                className="text-xs bg-gray-100 px-2 py-1 rounded"
-              >
-                {t}
-              </span>
-            ))}
-          </div>
         </div>
 
-        {/* Submit */}
-        <div className="md:col-span-2 flex justify-center">
+        {/* Submit / Reset */}
+        <div className="md:col-span-2 flex items-center justify-center gap-3">
           <button
             type="submit"
             className="bg-[#004080] text-white px-8 py-3 rounded-lg font-medium shadow-md hover:bg-blue-700 transition-all hover:-translate-y-1 disabled:opacity-50"
             disabled={isSubmitting}
+            id="submitBtn"
           >
-            {isSubmitting ? "Submitting..." : "Submit Job"}
+            {isSubmitting ? "Submitting..." : "Submit"}
+          </button>
+          <button
+            type="button"
+            className="px-4 py-3 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+            onClick={() => {
+              const reset = {
+                title: "",
+                companyName: "GyanNidhi Innovations Pvt. Ltd.",
+                department: "Engineering",
+                type: mode === "Job" ? "Full-time" : "Internship",
+                level: "",
+                location: "",
+                trainingPeriod: "",
+                status: "Open",
+                published: true,
+                salaryMin: "",
+                salaryMax: "",
+                salaryPeriod: "per year",
+                stipendAmt: "",
+                stipendPeriod: "per month",
+                overview: "",
+                fullDescription: "",
+                jobRole: "",
+                requiredSkills: [],
+                benefits: [],
+                howToApply: "",
+                tags: [],
+                experience: "",
+              };
+              setFormData(reset);
+              setErrors({});
+              try {
+                localStorage.removeItem(LOCAL_DRAFT_KEY);
+              } catch (_) {}
+            }}
+          >
+            Reset
           </button>
         </div>
       </form>
-
-      {/* Jobs List */}
-      <section className="w-full max-w-5xl mt-8">
-        <h2 className="text-2xl font-semibold mb-4">Existing Jobs</h2>
-        {jobs.length === 0 ? (
-          <p className="text-gray-600">No jobs yet.</p>
-        ) : (
-          <ul className="space-y-4">
-            {jobs.map((job) => (
-              <li
-                key={job._id}
-                className="bg-white p-4 rounded-lg shadow-md flex justify-between items-start"
-              >
-                <div className="min-w-0">
-                  <h3 className="text-lg font-semibold break-words">
-                    {job.title}{" "}
-                    <span className="text-sm text-gray-500">
-                      ({job.type})
-                    </span>
-                  </h3>
-                  <p className="text-gray-600 break-words">
-                    {job.companyName || job.department}{" "}
-                    {job.position ? `• ${job.position}` : ""}{" "}
-                    {job.location ? `• ${job.location}` : ""}
-                  </p>
-
-                  {/* Quick badges */}
-                  <div className="flex flex-wrap gap-2 text-sm text-gray-700 mt-2">
-                    {job.salaryRange && (
-                      <span className="bg-green-50 text-green-700 px-2 py-0.5 rounded">
-                        💰 {job.salaryRange}
-                      </span>
-                    )}
-                    {job.duration && (
-                      <span className="bg-gray-100 px-2 py-0.5 rounded">
-                        ⏳ {job.duration}
-                      </span>
-                    )}
-                    {job.experience && (
-                      <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded">
-                        🎯 {job.experience}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Preview text */}
-                  <p className="mt-2 text-sm text-gray-700 line-clamp-3">
-                    {job.overview || job.description}
-                  </p>
-
-                  {/* Tags */}
-                  {(job.tags || job.skills)?.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {(job.tags || job.skills).map((t, i) => (
-                        <span
-                          key={`${t}-${i}`}
-                          className="text-xs bg-gray-100 px-2 py-1 rounded"
-                        >
-                          {t}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-col items-end flex-shrink-0">
-                  <button
-                    onClick={() => handleDelete(job._id)}
-                    className="text-red-600 hover:underline"
-                  >
-                    Delete
-                  </button>
-                  <div className="text-xs text-gray-400 mt-2">
-                    {job.createdAt
-                      ? new Date(job.createdAt).toLocaleString()
-                      : ""}
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {/* Delete Modal */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded shadow-lg w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-4">Confirm delete</h3>
-            <p>
-              Are you sure you want to delete this job? This action cannot be
-              undone.
-            </p>
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                onClick={() => {
-                  setShowDeleteConfirm(false);
-                  setDeleteTarget(null);
-                }}
-                className="px-4 py-2 border rounded"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmDelete}
-                disabled={isDeleting}
-                className="px-4 py-2 bg-red-600 text-white rounded"
-              >
-                {isDeleting ? "Deleting..." : "Delete"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

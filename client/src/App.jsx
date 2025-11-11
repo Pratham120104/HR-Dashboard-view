@@ -5,6 +5,7 @@ import JobForm from "./components/JobForm";
 import CareersPage from "./components/CareersPage";
 import DashboardOverview from "./components/DashboardOverview";
 import JobDetail from "./pages/JobDetails"; // ✅ Correct path
+import ManageJobs from "./pages/ManageJobs";
 
 const App = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -38,6 +39,12 @@ const App = () => {
             >
               Careers
             </Link>
+            <Link 
+              to="/admin/jobs" 
+              className="block py-2 px-4 rounded-lg transition-all duration-200 hover:bg-blue-700 hover:text-white"
+            >
+              Manage Jobs
+            </Link>
           </nav>
         </aside>
 
@@ -60,6 +67,7 @@ const App = () => {
             <Route path="/create-job" element={<JobForm />} />
             <Route path="/careers" element={<CareersPage />} />
             <Route path="/job/:id" element={<JobDetail />} />
+            <Route path="/admin/jobs" element={<ManageJobs />} />
 
           </Routes>
         </main>
