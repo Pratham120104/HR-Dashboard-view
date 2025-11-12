@@ -1,27 +1,30 @@
-// config/db.js
+// db.js
 import mongoose from "mongoose";
 
 const connectDB = async () => {
-  if (!process.env.MONGO_URI) {
-    console.error("❌ MONGO_URI not set");
-    process.exit(1);
-  }
   try {
-    const conn = await mongoose.connect(process.env.MONGO_URI, {
-      autoIndex: true,
-      serverSelectionTimeoutMS: 15000,
-      socketTimeoutMS: 45000,
-      family: 4,
-    });
-    console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
+    const uri = process.env.MONGO_URI;
+    if (!uri) throw new Error("MONGO_URI is not set in environment variables.");
 
-    mongoose.connection.on("error", (err) => {
-      console.error("❌ Mongo error:", err?.message || err);
+    // Optional: recommended options for modern drivers
+    const conn = await mongoose.connect(uri, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 5000, // fails fast if cluster unreachable
     });
-  } catch (error) {
-    console.error(`❌ MongoDB Connection Error: ${error.message}`);
+
+    console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
+  } catch (err) {
+    console.error("❌ MongoDB Connection Error:", err.message);
     process.exit(1);
   }
+
+  // Optional safety hook: close connection gracefully on SIGINT
+  process.on("SIGINT", async () => {
+    await mongoose.connection.close();
+    console.log("🧹 MongoDB connection closed due to app termination");
+    process.exit(0);
+  });
 };
 
 export default connectDB;

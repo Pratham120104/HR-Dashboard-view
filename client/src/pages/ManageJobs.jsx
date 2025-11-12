@@ -29,6 +29,9 @@ const isNew = (iso) => {
   return now - created <= 7 * 24 * 60 * 60 * 1000;
 };
 
+// 🔑 Normalize id coming from API (id or _id)
+const getId = (j) => j?._id || j?.id || "";
+
 const TYPES = ["All", "Full-time", "Part-time", "Internship"];
 const STATUSES = ["All", "Open", "Closed"];
 
@@ -90,11 +93,16 @@ const ManageJobs = () => {
 
   const onToggleStatus = async (job) => {
     const next = job.status === "Closed" ? "Open" : "Closed";
+    const id = getId(job);
+    if (!id) {
+      toast.error("Invalid job id");
+      return;
+    }
     try {
       if (updateJobStatusSvc) {
-        await updateJobStatusSvc(job._id, next);
+        await updateJobStatusSvc(id, next);
       } else {
-        await axios.patch(`${API_BASE}/api/jobs/${job._id}/status`, { status: next });
+        await axios.patch(`${API_BASE}/api/jobs/${id}/status`, { status: next });
       }
       toast.success(`Status set to ${next}`);
       load();
@@ -106,11 +114,16 @@ const ManageJobs = () => {
 
   const onTogglePublished = async (job) => {
     const next = !job.published;
+    const id = getId(job);
+    if (!id) {
+      toast.error("Invalid job id");
+      return;
+    }
     try {
       if (updateJobPublishSvc) {
-        await updateJobPublishSvc(job._id, next);
+        await updateJobPublishSvc(id, next);
       } else {
-        await axios.patch(`${API_BASE}/api/jobs/${job._id}/publish`, { published: next });
+        await axios.patch(`${API_BASE}/api/jobs/${id}/status`, { status: next });
       }
       toast.success(next ? "Published" : "Unpublished");
       load();
@@ -121,9 +134,14 @@ const ManageJobs = () => {
   };
 
   const onDelete = async (job) => {
+    const id = getId(job);
+    if (!id) {
+      toast.error("Invalid job id");
+      return;
+    }
     if (!confirm(`Delete "${job.title}"? This cannot be undone.`)) return;
     try {
-      await deleteJob(job._id);
+      await deleteJob(id);
       toast.success("Job deleted");
       load();
     } catch (e) {
@@ -143,7 +161,7 @@ const ManageJobs = () => {
           </div>
           <div className="flex gap-3">
             <Link
-              to="/admin/new"
+              to="/create-job"
               className="inline-flex items-center px-4 py-2 rounded-lg bg-[#004080] text-white hover:bg-blue-700"
             >
               + Create Job
@@ -217,7 +235,7 @@ const ManageJobs = () => {
         </div>
 
         {/* List */}
-        <div className="mt-6 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-6 flex flex-col gap-6">
           {loading ? (
             <div className="col-span-full text-center text-gray-500 py-10">Loading…</div>
           ) : filtered.length === 0 ? (
@@ -226,7 +244,7 @@ const ManageJobs = () => {
             </div>
           ) : (
             filtered.map((job) => {
-              const id = job?._id || job?.id;
+              const id = getId(job);
               const title = sanitize(job.title) || "Untitled Role";
               const department = sanitize(job.department) || "General";
               const overview = sanitize(job.overview);

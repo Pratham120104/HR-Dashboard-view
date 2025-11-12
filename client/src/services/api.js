@@ -1,6 +1,9 @@
+// src/services/api.js
 import axios from "axios";
 
-// ✅ Determine base API URL
+/* ---------------------------------------------
+   Base URL
+--------------------------------------------- */
 const _base =
   (typeof import.meta !== "undefined" &&
     import.meta.env &&
@@ -8,63 +11,90 @@ const _base =
     ? import.meta.env.VITE_API_BASE_URL
     : "http://localhost:5000";
 
-// ✅ Ensure no trailing slash and add /api prefix only once
 const BASE_URL = `${_base.replace(/\/$/, "")}/api`;
 const JOBS_ENDPOINT = `${BASE_URL}/jobs`;
 
-// ✅ Create a new job
+/* ---------------------------------------------
+   Small helpers
+--------------------------------------------- */
+const enc = (v) => encodeURIComponent(String(v ?? "").trim());
+const requireId = (id) => {
+  if (!id) throw new Error("Job id is required");
+  return id;
+};
+
+/* ---------------------------------------------
+   Jobs
+--------------------------------------------- */
+
+// Create a job
 export const createJob = async (jobData) => {
-  try {
-    const res = await axios.post(JOBS_ENDPOINT, jobData);
-    return res.data;
-  } catch (error) {
-    console.error("Error creating job:", error);
-    throw error;
-  }
+  const { data } = await axios.post(JOBS_ENDPOINT, jobData);
+  return data;
 };
 
-// ✅ Fetch all jobs
-export const fetchJobs = async () => {
-  try {
-    const res = await axios.get(JOBS_ENDPOINT);
-    return res.data;
-  } catch (error) {
-    console.error("Error fetching jobs:", error);
-    return [];
-  }
+// Fetch jobs with optional filters: { status, type, department, q }
+export const fetchJobs = async (filters = {}) => {
+  const params = {};
+  if (filters.status) params.status = filters.status;
+  if (filters.type) params.type = filters.type;
+  if (filters.department) params.department = filters.department;
+  if (filters.q) params.q = filters.q;
+   if (typeof filters.published !== "undefined") params.published = filters.published;
+
+  const { data } = await axios.get(JOBS_ENDPOINT, { params });
+  return Array.isArray(data) ? data : [];
 };
 
-// ✅ Fetch single job by ID (for JobDetail.jsx)
+// Get a single job
 export const fetchJobById = async (id) => {
-  try {
-    const res = await axios.get(`${JOBS_ENDPOINT}/${id}`);
-    return res.data;
-  } catch (error) {
-    console.error("Error fetching job by ID:", error);
-    throw error;
-  }
+  const { data } = await axios.get(`${JOBS_ENDPOINT}/${enc(requireId(id))}`);
+  return data;
 };
 
-// ✅ Delete a job by ID
+// Update a job (partial). Pass a patch object.
+export const updateJob = async (id, patch) => {
+  const { data } = await axios.patch(`${JOBS_ENDPOINT}/${enc(requireId(id))}`, patch, {
+    headers: { "Content-Type": "application/json" },
+  });
+  return data;
+};
+
+// Set job status (Open/Closed)
+export const updateJobStatus = async (id, status) => {
+  const { data } = await axios.patch(
+    `${JOBS_ENDPOINT}/${enc(requireId(id))}/status`,
+    { status },
+    { headers: { "Content-Type": "application/json" } }
+  );
+  return data;
+};
+
+// Set published flag (true/false)
+export const updateJobPublish = async (id, published) => {
+  const { data } = await axios.patch(
+    `${JOBS_ENDPOINT}/${enc(requireId(id))}/publish`,
+    { published },
+    { headers: { "Content-Type": "application/json" } }
+  );
+  return data;
+};
+
+// Delete a job
 export const deleteJob = async (id) => {
-  try {
-    const res = await axios.delete(`${JOBS_ENDPOINT}/${id}`);
-    return res.data;
-  } catch (error) {
-    console.error("Error deleting job:", error);
-    throw error;
-  }
+  const { data } = await axios.delete(`${JOBS_ENDPOINT}/${enc(requireId(id))}`);
+  return data;
 };
 
-// ✅ (Optional) Submit job application (centralize your apply logic)
+/* ---------------------------------------------
+   Applications
+--------------------------------------------- */
+
+// Apply to a job (multipart/form-data). formData must include
+// fullName, email, phone, why, (optional) jobId, jobTitle, and resume File
 export const submitApplication = async (formData) => {
-  try {
-    const res = await axios.post(`${BASE_URL}/apply`, formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
-    return res.data;
-  } catch (error) {
-    console.error("Error submitting job application:", error);
-    throw error;
-  }
+  const { data } = await axios.post(`${BASE_URL}/apply`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
 };

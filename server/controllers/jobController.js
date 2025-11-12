@@ -1,25 +1,36 @@
 // controllers/jobController.js
+import mongoose from "mongoose";
 import Job from "../models/Job.js";
 
 /* ------------------------ Helpers ------------------------ */
+
 const strip = (s) => String(s || "").replace(/<[^>]+>/g, "").trim();
 
 const toArray = (v) => {
   if (Array.isArray(v)) return v.map(strip).filter(Boolean);
-  if (typeof v === "string")
+  if (typeof v === "string") {
     return v
-      .split("\n")
+      .split(/\r?\n/) // CRLF-safe
       .map(strip)
       .filter(Boolean);
+  }
   return [];
 };
 
+const TYPES = new Set(["Full-time", "Part-time", "Internship"]);
+const STATUSES = new Set(["Open", "Closed"]);
+
+const validStatus = (s) => (STATUSES.has(s) ? s : undefined);
+const validType = (s) => (TYPES.has(s) ? s : undefined);
+
+const boolOrUndef = (v) =>
+  typeof v === "boolean" ? v : (v === "true" ? true : v === "false" ? false : undefined);
+
+const isValidId = (id) => mongoose.isValidObjectId(id);
+
 // Merge tags + requiredSkills; de-dup and strip
 const mergeTagCloud = (tags, requiredSkills) => {
-  const set = new Set([
-    ...(toArray(tags) || []),
-    ...(toArray(requiredSkills) || []),
-  ]);
+  const set = new Set([...(toArray(tags) || []), ...(toArray(requiredSkills) || [])]);
   return Array.from(set);
 };
 
@@ -32,13 +43,14 @@ const buildCreatePayload = (b = {}) => {
     // Core
     title: strip(b.title),
     department: strip(b.department),
-    type: strip(b.type), // "Full-time" | "Part-time" | "Internship"
+    type: validType(strip(b.type)), // "Full-time" | "Part-time" | "Internship"
     location: strip(b.location),
 
-    // Status (optional; default 'Open' in schema)
-    status: b.status ? strip(b.status) : undefined,
+    // Admin
+    status: validStatus(strip(b.status)) || undefined, // schema default "Open" if undefined
+    published: boolOrUndef(b.published), // leave undefined -> schema default
 
-    // Level (Entry/Mid/High for Full-time) -> stored as duration
+    // Level (Entry/Mid/High for Full-time) or duration for internships
     duration: strip(b.duration),
 
     // Company/pay
@@ -77,7 +89,8 @@ const buildUpdateSet = (b = {}) => {
   };
 
   // Arrays first (so we can merge tags+requiredSkills)
-  const requiredSkills = b.requiredSkills !== undefined ? toArray(b.requiredSkills) : undefined;
+  const requiredSkills =
+    b.requiredSkills !== undefined ? toArray(b.requiredSkills) : undefined;
   const benefits = b.benefits !== undefined ? toArray(b.benefits) : undefined;
 
   // If either tags or requiredSkills present, recompute merged tag cloud
@@ -91,11 +104,12 @@ const buildUpdateSet = (b = {}) => {
   // Core text-ish fields
   assign("title", b.title !== undefined ? strip(b.title) : undefined);
   assign("department", b.department !== undefined ? strip(b.department) : undefined);
-  assign("type", b.type !== undefined ? strip(b.type) : undefined);
+  assign("type", b.type !== undefined ? validType(strip(b.type)) : undefined);
   assign("location", b.location !== undefined ? strip(b.location) : undefined);
 
-  // Status
-  assign("status", b.status !== undefined ? strip(b.status) : undefined);
+  // Admin
+  assign("status", b.status !== undefined ? validStatus(strip(b.status)) : undefined);
+  assign("published", boolOrUndef(b.published));
 
   // Duration (level)
   assign("duration", b.duration !== undefined ? strip(b.duration) : undefined);
@@ -136,6 +150,15 @@ const buildUpdateSet = (b = {}) => {
 export const createJob = async (req, res) => {
   try {
     const payload = buildCreatePayload(req.body);
+
+    // If a non-empty invalid type/status was provided, fail fast
+    if (req.body?.type && payload.type === undefined) {
+      return res.status(400).json({ message: "Invalid job type. Use Full-time, Part-time, or Internship." });
+    }
+    if (req.body?.status && payload.status === undefined) {
+      return res.status(400).json({ message: "Invalid status. Use Open or Closed." });
+    }
+
     const job = await Job.create(payload);
     return res.status(201).json(job);
   } catch (error) {
@@ -153,42 +176,109 @@ export const createJob = async (req, res) => {
   }
 };
 
-// 🟢 Get all jobs (with light filters)
+// 🟢 Get all jobs (filters, search, pagination)
 export const getJobs = async (req, res) => {
   try {
-    const { status, type, department, q } = req.query || {};
+    const { status, type, department, q, published, page = 1, limit = 20 } = req.query || {};
+    const pg = Math.max(parseInt(page, 10) || 1, 1);
+    const lim = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100);
+
     const query = {};
 
-    if (status) query.status = strip(status);
-    if (type) query.type = strip(type);
+    if (status && STATUSES.has(strip(status))) query.status = strip(status);
+    if (type && validType(strip(type))) query.type = strip(type);
     if (department) query.department = strip(department);
 
-    // Simple "q" text search — uses text index if present, else OR fallback
-    let jobs;
-    if (q && String(q).trim()) {
-      const term = strip(q);
-      // Prefer text index if defined in schema
-      jobs = await Job.find(
-        { $text: { $search: term }, ...(Object.keys(query).length ? query : {}) },
-        { score: { $meta: "textScore" } }
-      )
-        .sort({ score: { $meta: "textScore" }, createdAt: -1 })
-        .exec();
-    } else {
-      jobs = await Job.find(query).sort({ createdAt: -1 }).exec();
+    // support ?published=true|false
+    if (typeof published !== "undefined") {
+      const pv = String(published).toLowerCase();
+      if (pv === "true") query.published = true;
+      else if (pv === "false") query.published = false;
     }
 
-    return res.status(200).json(jobs);
+    // Fields needed by card/list views
+    const projection =
+      "title department type location status published salaryRange duration overview createdAt";
+
+    let baseQuery;
+    let sortSpec;
+    let total;
+
+    if (q && String(q).trim()) {
+      const term = strip(q);
+      const useText = term.length >= 3;
+
+      if (useText) {
+        // Requires a text index on title/overview/description/tags
+        baseQuery = { ...query, $text: { $search: term } };
+        sortSpec = { score: { $meta: "textScore" }, createdAt: -1 };
+      } else {
+        // Fallback regex search for short/partial terms
+        baseQuery = {
+          ...query,
+          $or: [
+            { title: { $regex: term, $options: "i" } },
+            { overview: { $regex: term, $options: "i" } },
+            { description: { $regex: term, $options: "i" } },
+            { tags: { $regex: term, $options: "i" } },
+            { location: { $regex: term, $options: "i" } },
+            { department: { $regex: term, $options: "i" } },
+          ],
+        };
+        sortSpec = { createdAt: -1 };
+      }
+
+      const cursor = Job.find(
+        baseQuery,
+        useText ? { score: { $meta: "textScore" }, ...projToObj(projection) } : projection
+      )
+        .sort(sortSpec)
+        .skip((pg - 1) * lim)
+        .limit(lim)
+        .lean();
+
+      total = await Job.countDocuments(baseQuery);
+      const jobs = await cursor;
+
+      const hasMore = pg * lim < total;
+      return res.status(200).json({ data: jobs, page: pg, limit: lim, total, hasMore });
+    } else {
+      baseQuery = query;
+      sortSpec = { createdAt: -1 };
+
+      const [jobs, count] = await Promise.all([
+        Job.find(baseQuery, projection)
+          .sort(sortSpec)
+          .skip((pg - 1) * lim)
+          .limit(lim)
+          .lean(),
+        Job.countDocuments(baseQuery),
+      ]);
+
+      const hasMore = pg * lim < count;
+      return res.status(200).json({ data: jobs, page: pg, limit: lim, total: count, hasMore });
+    }
   } catch (error) {
     console.error("❌ Error fetching jobs:", error);
     return res.status(500).json({ message: "Server Error" });
   }
 };
 
+// helper: convert space-delimited projection to object (for meta score mix)
+function projToObj(projStr) {
+  return projStr.split(/\s+/).reduce((acc, key) => {
+    if (key) acc[key] = 1;
+    return acc;
+  }, {});
+}
+
 // 🟢 Get a single job by ID
 export const getJobById = async (req, res) => {
   try {
-    const job = await Job.findById(req.params.id);
+    const { id } = req.params || {};
+    if (!isValidId(id)) return res.status(400).json({ message: "Invalid job id" });
+
+    const job = await Job.findById(id).lean();
     if (!job) return res.status(404).json({ message: "Job not found" });
     return res.status(200).json(job);
   } catch (error) {
@@ -197,19 +287,30 @@ export const getJobById = async (req, res) => {
   }
 };
 
-// 🟢 Update a job (partial update; accepts either PUT or PATCH)
+// 🟢 Update a job (partial update; accepts PUT/PATCH)
 export const updateJob = async (req, res) => {
   try {
+    const { id } = req.params || {};
+    if (!isValidId(id)) return res.status(400).json({ message: "Invalid job id" });
+
     const $set = buildUpdateSet(req.body);
     if (Object.keys($set).length === 0) {
       return res.status(400).json({ message: "No valid fields provided to update." });
     }
 
+    // If client explicitly sent invalid enums, fail fast
+    if ("type" in $set && $set.type === undefined && req.body?.type?.trim()) {
+      return res.status(400).json({ message: "Invalid job type. Use Full-time, Part-time, or Internship." });
+    }
+    if ("status" in $set && $set.status === undefined && req.body?.status?.trim()) {
+      return res.status(400).json({ message: "Invalid status. Use Open or Closed." });
+    }
+
     const updated = await Job.findByIdAndUpdate(
-      req.params.id,
+      id,
       { $set },
       { new: true, runValidators: true }
-    );
+    ).lean();
 
     if (!updated) return res.status(404).json({ message: "Job not found" });
     return res.status(200).json(updated);
@@ -231,38 +332,45 @@ export const updateJob = async (req, res) => {
 // 🟢 Set job status (Open/Closed) — PATCH /:id/status
 export const setJobStatus = async (req, res) => {
   try {
+    const { id } = req.params || {};
     const nextStatus = strip(req.body?.status);
-    if (!nextStatus) {
-      return res.status(400).json({ message: "Status is required" });
+
+    if (!isValidId(id)) {
+      return res.status(400).json({ message: "Invalid job id" });
+    }
+    if (!STATUSES.has(nextStatus)) {
+      return res.status(400).json({ message: "Status must be 'Open' or 'Closed'" });
     }
 
+    // Optional: auto-unpublish when closing
+    const patch = { status: nextStatus };
+    if (nextStatus === "Closed") patch.published = false;
+
     const updated = await Job.findByIdAndUpdate(
-      req.params.id,
-      { $set: { status: nextStatus } },
+      id,
+      { $set: patch },
       { new: true, runValidators: true }
-    );
+    ).lean();
 
     if (!updated) return res.status(404).json({ message: "Job not found" });
     return res.status(200).json(updated);
   } catch (error) {
     console.error("❌ Error updating job status:", error);
-
-    if (error.name === "ValidationError") {
-      const details = Object.keys(error.errors).reduce((acc, key) => {
-        acc[key] = error.errors[key].message;
-        return acc;
-      }, {});
-      return res.status(400).json({ message: "Validation Error", errors: details });
-    }
-
     return res.status(500).json({ message: "Server Error" });
   }
 };
 
+// Keep a friendly alias for services/routes that expect this name
+export const updateJobStatus = setJobStatus;
+
 // 🟢 Delete a job
 export const deleteJob = async (req, res) => {
   try {
-    const job = await Job.findByIdAndDelete(req.params.id);
+    const { id } = req.params || {};
+    if (!isValidId(id)) {
+      return res.status(400).json({ message: "Invalid job id" });
+    }
+    const job = await Job.findByIdAndDelete(id).lean();
     if (!job) return res.status(404).json({ message: "Job not found" });
     return res.status(200).json({ message: "Job deleted successfully" });
   } catch (error) {

@@ -119,10 +119,10 @@ const JobDetail = () => {
       formData.append("fullName", strip(form.fullName));
       formData.append("email", strip(form.email));
       formData.append("phone", strip(form.phone));
-      formData.append("why", strip(form.why));
+      formData.append("comments", strip(form.why));
       formData.append("resume", resumeFile);
 
-      await axios.post(`${API_BASE}/api/apply`, formData, {
+      await axios.post(`${API_BASE}/api/apply/submit`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
