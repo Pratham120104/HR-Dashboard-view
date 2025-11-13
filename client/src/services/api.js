@@ -11,7 +11,11 @@ const _base =
     ? import.meta.env.VITE_API_BASE_URL
     : "http://localhost:5000";
 
-const BASE_URL = `${_base.replace(/\/$/, "")}/api`;
+// Root API base like "http://localhost:5000"
+export const API_BASE = _base.replace(/\/$/, "");
+
+// API base like "http://localhost:5000/api"
+const BASE_URL = `${API_BASE}/api`;
 const JOBS_ENDPOINT = `${BASE_URL}/jobs`;
 
 /* ---------------------------------------------
@@ -40,10 +44,13 @@ export const fetchJobs = async (filters = {}) => {
   if (filters.type) params.type = filters.type;
   if (filters.department) params.department = filters.department;
   if (filters.q) params.q = filters.q;
-   if (typeof filters.published !== "undefined") params.published = filters.published;
+  // 🔁 no more `published` filter
 
   const { data } = await axios.get(JOBS_ENDPOINT, { params });
-  return Array.isArray(data) ? data : [];
+  // Server returns either an array (legacy) or an object { data, page, total }
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray(data.data)) return data.data;
+  return [];
 };
 
 // Get a single job
@@ -54,9 +61,13 @@ export const fetchJobById = async (id) => {
 
 // Update a job (partial). Pass a patch object.
 export const updateJob = async (id, patch) => {
-  const { data } = await axios.patch(`${JOBS_ENDPOINT}/${enc(requireId(id))}`, patch, {
-    headers: { "Content-Type": "application/json" },
-  });
+  const { data } = await axios.patch(
+    `${JOBS_ENDPOINT}/${enc(requireId(id))}`,
+    patch,
+    {
+      headers: { "Content-Type": "application/json" },
+    }
+  );
   return data;
 };
 
@@ -70,19 +81,13 @@ export const updateJobStatus = async (id, status) => {
   return data;
 };
 
-// Set published flag (true/false)
-export const updateJobPublish = async (id, published) => {
-  const { data } = await axios.patch(
-    `${JOBS_ENDPOINT}/${enc(requireId(id))}/publish`,
-    { published },
-    { headers: { "Content-Type": "application/json" } }
-  );
-  return data;
-};
+// ❌ Removed updateJobPublish – no publish feature anymore
 
 // Delete a job
 export const deleteJob = async (id) => {
-  const { data } = await axios.delete(`${JOBS_ENDPOINT}/${enc(requireId(id))}`);
+  const { data } = await axios.delete(
+    `${JOBS_ENDPOINT}/${enc(requireId(id))}`
+  );
   return data;
 };
 
@@ -90,11 +95,23 @@ export const deleteJob = async (id) => {
    Applications
 --------------------------------------------- */
 
-// Apply to a job (multipart/form-data). formData must include
-// fullName, email, phone, why, (optional) jobId, jobTitle, and resume File
+// Apply to a job (multipart/form-data).
+// formData must include: fullName, email, phone, comments/why, jobId, jobTitle, resume
 export const submitApplication = async (formData) => {
-  const { data } = await axios.post(`${BASE_URL}/apply`, formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
+  const { data } = await axios.post(
+    `${BASE_URL}/apply/submit`,
+    formData,
+    {
+      headers: { "Content-Type": "multipart/form-data" },
+    }
+  );
   return data;
+};
+
+// Fetch applications for HR dashboard (optional query params like { jobId })
+export const fetchApplications = async (params = {}) => {
+  const { data } = await axios.get(`${BASE_URL}/applications`, { params });
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray(data.data)) return data.data;
+  return [];
 };

@@ -13,7 +13,6 @@ try {
 } catch (_) {}
 
 const updateJobStatusSvc = svc?.updateJobStatus || null;
-const updateJobPublishSvc = svc?.updateJobPublish || null;
 
 const API_BASE =
   (typeof import.meta !== "undefined" &&
@@ -112,27 +111,6 @@ const ManageJobs = () => {
     }
   };
 
-  const onTogglePublished = async (job) => {
-    const next = !job.published;
-    const id = getId(job);
-    if (!id) {
-      toast.error("Invalid job id");
-      return;
-    }
-    try {
-      if (updateJobPublishSvc) {
-        await updateJobPublishSvc(id, next);
-      } else {
-        await axios.patch(`${API_BASE}/api/jobs/${id}/status`, { status: next });
-      }
-      toast.success(next ? "Published" : "Unpublished");
-      load();
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to update published state");
-    }
-  };
-
   const onDelete = async (job) => {
     const id = getId(job);
     if (!id) {
@@ -157,7 +135,7 @@ const ManageJobs = () => {
         <div className="max-w-7xl mx-auto px-6 py-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-semibold text-[#004080]">Manage Jobs</h1>
-            <p className="text-gray-500">Search, filter, publish, open/close, and delete postings.</p>
+            <p className="text-gray-500">Search, filter, open/close, and delete postings.</p>
           </div>
           <div className="flex gap-3">
             <Link
@@ -251,7 +229,6 @@ const ManageJobs = () => {
               const location = sanitize(job.location) || "";
               const type = sanitize(job.type) || "";
               const status = sanitize(job.status || "Open");
-              const published = !!job.published;
               const salary = sanitize(job.salaryRange) || "";
               const duration = sanitize(job.duration) || "";
               const createdAt = job?.createdAt;
@@ -261,7 +238,7 @@ const ManageJobs = () => {
                   key={id}
                   className="group bg-white rounded-2xl border border-gray-200 p-5 shadow-sm hover:shadow-md transition-all duration-200"
                 >
-                  {/* Top row: type + NEW + status/publish */}
+                  {/* Top row: type + NEW + status */}
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       {type && (
@@ -294,16 +271,6 @@ const ManageJobs = () => {
                       >
                         {status}
                       </span>
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded border ${
-                          published
-                            ? "bg-blue-50 text-blue-700 border-blue-200"
-                            : "bg-gray-50 text-gray-600 border-gray-200"
-                        }`}
-                        title="Visibility"
-                      >
-                        {published ? "Published" : "Unpublished"}
-                      </span>
                     </div>
                   </div>
 
@@ -315,14 +282,26 @@ const ManageJobs = () => {
 
                   {/* Snippet */}
                   {overview && (
-                    <p className="mt-3 text-sm text-gray-600 leading-relaxed line-clamp-3">{overview}</p>
+                    <p className="mt-3 text-sm text-gray-600 leading-relaxed line-clamp-3">
+                      {overview}
+                    </p>
                   )}
 
                   {/* Meta */}
                   <div className="mt-4 flex flex-wrap gap-2 text-sm text-gray-700">
-                    {salary && <span className="bg-green-50 text-green-700 px-2 py-0.5 rounded">💰 {salary}</span>}
-                    {duration && <span className="bg-gray-100 px-2 py-0.5 rounded">⏳ {duration}</span>}
-                    {location && <span className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded">📍 {location}</span>}
+                    {salary && (
+                      <span className="bg-green-50 text-green-700 px-2 py-0.5 rounded">
+                        💰 {salary}
+                      </span>
+                    )}
+                    {duration && (
+                      <span className="bg-gray-100 px-2 py-0.5 rounded">⏳ {duration}</span>
+                    )}
+                    {location && (
+                      <span className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded">
+                        📍 {location}
+                      </span>
+                    )}
                   </div>
 
                   {/* Actions */}
@@ -339,13 +318,6 @@ const ManageJobs = () => {
                       >
                         View
                       </Link>
-                      <button
-                        onClick={() => onTogglePublished(job)}
-                        className="text-slate-700 hover:underline"
-                        title={published ? "Unpublish" : "Publish"}
-                      >
-                        {published ? "Unpublish" : "Publish"}
-                      </button>
                       <button
                         onClick={() => onToggleStatus(job)}
                         className="text-emerald-700 hover:underline"

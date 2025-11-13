@@ -4,14 +4,22 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import Job from "../models/Job.js"; // used to increment applications
-import { submitJobApplication } from "../controllers/applicationController.js";
+import {
+  submitJobApplication,
+  getApplications,
+} from "../controllers/applicationController.js";
 
 const router = express.Router();
 
 /* --------------------------- Config --------------------------- */
 
 // You can override with env: UPLOAD_DIR=/abs/path
-const DEFAULT_UPLOAD_DIR = path.join(process.cwd(), "server", "uploads", "resumes");
+const DEFAULT_UPLOAD_DIR = path.join(
+  process.cwd(),
+  "server",
+  "uploads",
+  "resumes"
+);
 const UPLOAD_DIR = process.env.UPLOAD_DIR
   ? path.resolve(process.env.UPLOAD_DIR)
   : DEFAULT_UPLOAD_DIR;
@@ -46,7 +54,9 @@ const MAX_LEN = {
 // Optional: CSV application audit log
 const CSV_LOG_DIR = path.join(process.cwd(), "server", "uploads");
 const CSV_LOG_FILE = path.join(CSV_LOG_DIR, "applications.csv");
-try { fs.mkdirSync(CSV_LOG_DIR, { recursive: true }); } catch {}
+try {
+  fs.mkdirSync(CSV_LOG_DIR, { recursive: true });
+} catch {}
 
 /* ------------------------ Multer setup ------------------------ */
 
@@ -87,7 +97,9 @@ const upload = multer({
  * Lightweight endpoint that stores the file, does basic validation,
  * increments the job's application counter, and returns JSON.
  *
- * POST /api/apply
+ * If this router is mounted at /api/apply:
+ *   POST /api/apply
+ *
  * FormData fields:
  *  - fullName, email, phone, why, jobId, jobTitle, resume (file)
  */
@@ -112,9 +124,15 @@ router.post("/", upload.single("resume"), async (req, res) => {
     if (Object.keys(errors).length > 0) {
       // Clean up uploaded file if present but invalid form data
       if (req.file?.path) {
-        try { fs.unlinkSync(req.file.path); } catch { /* ignore */ }
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch {
+          /* ignore */
+        }
       }
-      return res.status(400).json({ ok: false, message: "Validation Error", errors });
+      return res
+        .status(400)
+        .json({ ok: false, message: "Validation Error", errors });
     }
 
     // Optionally increment application counter if jobId looks valid
@@ -141,20 +159,24 @@ router.post("/", upload.single("resume"), async (req, res) => {
     try {
       const header =
         "receivedAt,jobId,jobTitle,fullName,email,phone,why,resumeStoredAs,resumeSize\n";
-      if (!fs.existsSync(CSV_LOG_FILE)) fs.writeFileSync(CSV_LOG_FILE, header, "utf8");
-      const line = [
-        new Date().toISOString(),
-        JSON.stringify(jobId || ""),
-        JSON.stringify(jobTitle || ""),
-        JSON.stringify(fullName || ""),
-        JSON.stringify(email || ""),
-        JSON.stringify(phone || ""),
-        JSON.stringify(why || "").replace(/\n/g, " "),
-        JSON.stringify(req.file.filename),
-        req.file.size,
-      ].join(",") + "\n";
+      if (!fs.existsSync(CSV_LOG_FILE))
+        fs.writeFileSync(CSV_LOG_FILE, header, "utf8");
+      const line =
+        [
+          new Date().toISOString(),
+          JSON.stringify(jobId || ""),
+          JSON.stringify(jobTitle || ""),
+          JSON.stringify(fullName || ""),
+          JSON.stringify(email || ""),
+          JSON.stringify(phone || ""),
+          JSON.stringify(why || "").replace(/\n/g, " "),
+          JSON.stringify(req.file.filename),
+          req.file.size,
+        ].join(",") + "\n";
       fs.appendFileSync(CSV_LOG_FILE, line, "utf8");
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
 
     return res.status(201).json({
       ok: true,
@@ -170,8 +192,8 @@ router.post("/", upload.single("resume"), async (req, res) => {
         filename: req.file.originalname,
         storedAs: req.file.filename,
         size: req.file.size,
-        url: fileUrl,         // absolute URL (if served)
-        path: relativePath,   // relative path (served statically)
+        url: fileUrl, // absolute URL (if served)
+        path: relativePath, // relative path (served statically)
         mimetype: req.file.mimetype,
       },
       receivedAt: new Date().toISOString(),
@@ -181,14 +203,21 @@ router.post("/", upload.single("resume"), async (req, res) => {
 
     if (err instanceof multer.MulterError) {
       if (err.code === "LIMIT_FILE_SIZE") {
-        return res.status(400).json({ ok: false, message: "File too large. Max 5 MB." });
+        return res
+          .status(400)
+          .json({ ok: false, message: "File too large. Max 5 MB." });
       }
       if (err.code === "LIMIT_UNEXPECTED_FILE") {
-        return res.status(400).json({ ok: false, message: "Only PDF, DOC, or DOCX files are allowed." });
+        return res.status(400).json({
+          ok: false,
+          message: "Only PDF, DOC, or DOCX files are allowed.",
+        });
       }
     }
 
-    return res.status(500).json({ ok: false, message: "Failed to submit application" });
+    return res
+      .status(500)
+      .json({ ok: false, message: "Failed to submit application" });
   }
 });
 
@@ -196,17 +225,34 @@ router.post("/", upload.single("resume"), async (req, res) => {
  * Full submit with email to HR + confirmation to applicant.
  * Important: Map FE's `why` to controller's expected `comments`.
  *
- * POST /api/apply/submit
+ * If this router is mounted at /api/apply:
+ *   POST /api/apply/submit
+ *
  * FormData fields:
  *  - fullName, email, phone, why, jobId, jobTitle, resume (file)
  */
-router.post("/submit", upload.single("resume"), (req, _res, next) => {
-  // 🔁 Map field names so controller validation passes
-  if (req.body && req.body.why && !req.body.comments) {
-    req.body.comments = req.body.why;
-  }
-  // (Optional) normalize jobTitle capitalization/length here if needed
-  next();
-}, submitJobApplication);
+router.post(
+  "/submit",
+  upload.single("resume"),
+  (req, _res, next) => {
+    // 🔁 Map field names so controller validation passes
+    if (req.body && req.body.why && !req.body.comments) {
+      req.body.comments = req.body.why;
+    }
+    // (Optional) normalize jobTitle capitalization/length here if needed
+    next();
+  },
+  submitJobApplication
+);
+
+/**
+ * HR dashboard – list applications
+ *
+ * If this router is mounted at /api:
+ *   GET /api/applications
+ * If mounted at /api/apply:
+ *   GET /api/apply/applications
+ */
+router.get("/applications", getApplications);
 
 export default router;

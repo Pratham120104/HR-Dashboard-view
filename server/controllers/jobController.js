@@ -23,9 +23,6 @@ const STATUSES = new Set(["Open", "Closed"]);
 const validStatus = (s) => (STATUSES.has(s) ? s : undefined);
 const validType = (s) => (TYPES.has(s) ? s : undefined);
 
-const boolOrUndef = (v) =>
-  typeof v === "boolean" ? v : (v === "true" ? true : v === "false" ? false : undefined);
-
 const isValidId = (id) => mongoose.isValidObjectId(id);
 
 // Merge tags + requiredSkills; de-dup and strip
@@ -48,7 +45,6 @@ const buildCreatePayload = (b = {}) => {
 
     // Admin
     status: validStatus(strip(b.status)) || undefined, // schema default "Open" if undefined
-    published: boolOrUndef(b.published), // leave undefined -> schema default
 
     // Level (Entry/Mid/High for Full-time) or duration for internships
     duration: strip(b.duration),
@@ -109,7 +105,6 @@ const buildUpdateSet = (b = {}) => {
 
   // Admin
   assign("status", b.status !== undefined ? validStatus(strip(b.status)) : undefined);
-  assign("published", boolOrUndef(b.published));
 
   // Duration (level)
   assign("duration", b.duration !== undefined ? strip(b.duration) : undefined);
@@ -153,7 +148,9 @@ export const createJob = async (req, res) => {
 
     // If a non-empty invalid type/status was provided, fail fast
     if (req.body?.type && payload.type === undefined) {
-      return res.status(400).json({ message: "Invalid job type. Use Full-time, Part-time, or Internship." });
+      return res
+        .status(400)
+        .json({ message: "Invalid job type. Use Full-time, Part-time, or Internship." });
     }
     if (req.body?.status && payload.status === undefined) {
       return res.status(400).json({ message: "Invalid status. Use Open or Closed." });
@@ -179,7 +176,7 @@ export const createJob = async (req, res) => {
 // 🟢 Get all jobs (filters, search, pagination)
 export const getJobs = async (req, res) => {
   try {
-    const { status, type, department, q, published, page = 1, limit = 20 } = req.query || {};
+    const { status, type, department, q, page = 1, limit = 20 } = req.query || {};
     const pg = Math.max(parseInt(page, 10) || 1, 1);
     const lim = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100);
 
@@ -189,16 +186,9 @@ export const getJobs = async (req, res) => {
     if (type && validType(strip(type))) query.type = strip(type);
     if (department) query.department = strip(department);
 
-    // support ?published=true|false
-    if (typeof published !== "undefined") {
-      const pv = String(published).toLowerCase();
-      if (pv === "true") query.published = true;
-      else if (pv === "false") query.published = false;
-    }
-
-    // Fields needed by card/list views
+    // Fields needed by card/list views (no more `published`)
     const projection =
-      "title department type location status published salaryRange duration overview createdAt";
+      "title department type location status salaryRange duration overview createdAt";
 
     let baseQuery;
     let sortSpec;
@@ -256,7 +246,9 @@ export const getJobs = async (req, res) => {
       ]);
 
       const hasMore = pg * lim < count;
-      return res.status(200).json({ data: jobs, page: pg, limit: lim, total: count, hasMore });
+      return res
+        .status(200)
+        .json({ data: jobs, page: pg, limit: lim, total: count, hasMore });
     }
   } catch (error) {
     console.error("❌ Error fetching jobs:", error);
@@ -300,17 +292,15 @@ export const updateJob = async (req, res) => {
 
     // If client explicitly sent invalid enums, fail fast
     if ("type" in $set && $set.type === undefined && req.body?.type?.trim()) {
-      return res.status(400).json({ message: "Invalid job type. Use Full-time, Part-time, or Internship." });
+      return res
+        .status(400)
+        .json({ message: "Invalid job type. Use Full-time, Part-time, or Internship." });
     }
     if ("status" in $set && $set.status === undefined && req.body?.status?.trim()) {
       return res.status(400).json({ message: "Invalid status. Use Open or Closed." });
     }
 
-    const updated = await Job.findByIdAndUpdate(
-      id,
-      { $set },
-      { new: true, runValidators: true }
-    ).lean();
+    const updated = await Job.findByIdAndUpdate(id, { $set }, { new: true, runValidators: true }).lean();
 
     if (!updated) return res.status(404).json({ message: "Job not found" });
     return res.status(200).json(updated);
@@ -342,9 +332,7 @@ export const setJobStatus = async (req, res) => {
       return res.status(400).json({ message: "Status must be 'Open' or 'Closed'" });
     }
 
-    // Optional: auto-unpublish when closing
     const patch = { status: nextStatus };
-    if (nextStatus === "Closed") patch.published = false;
 
     const updated = await Job.findByIdAndUpdate(
       id,

@@ -16,7 +16,7 @@ export const DEPARTMENTS = Object.freeze([
   "Education",
 ]);
 
-export const JOB_TYPES  = Object.freeze(["Full-time", "Part-time", "Internship"]);
+export const JOB_TYPES = Object.freeze(["Full-time", "Part-time", "Internship"]);
 export const JOB_STATUS = Object.freeze(["Open", "Closed"]);
 
 /** -----------------------------
@@ -39,38 +39,76 @@ const slugify = (s) =>
 const JobSchema = new mongoose.Schema(
   {
     // Core
-    title:       { type: String, required: true, trim: true, maxlength: 160, index: true },
-    slug:        { type: String, trim: true, maxlength: 180, unique: true, sparse: true }, // optional, auto from title
-    department:  { type: String, enum: DEPARTMENTS, required: true, trim: true, index: true },
-    type:        { type: String, enum: JOB_TYPES, required: true, index: true },
-    location:    { type: String, required: true, trim: true, maxlength: 160, index: true },
+    title: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 160,
+      index: true,
+    },
+    slug: {
+      type: String,
+      trim: true,
+      maxlength: 180,
+      unique: true,
+      sparse: true, // optional; auto from title
+    },
+    department: {
+      type: String,
+      enum: DEPARTMENTS,
+      required: true,
+      trim: true,
+      index: true,
+    },
+    type: {
+      type: String,
+      enum: JOB_TYPES,
+      required: true,
+      index: true,
+    },
+    location: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 160,
+      index: true,
+    },
 
-    // Admin visibility / lifecycle
-    status:     { type: String, enum: JOB_STATUS, default: "Open", index: true },
-    published:  { type: Boolean, default: true, index: true },
+    // Admin lifecycle (no publish flag; only Open/Closed)
+    status: {
+      type: String,
+      enum: JOB_STATUS,
+      default: "Open",
+      index: true,
+    },
 
-    // Level / duration
-    duration:   { type: String, trim: true, maxlength: 40 },
+    // Level / duration (Entry/Mid/High etc. for jobs)
+    duration: { type: String, trim: true, maxlength: 40 },
 
     // Company & pay
-    companyName:   { type: String, default: "GyanNidhi Innovations Pvt. Ltd.", trim: true, maxlength: 160 },
-    salaryRange:   { type: String, trim: true, maxlength: 120 },
-    trainingPeriod:{ type: String, trim: true, maxlength: 120 },
+    companyName: {
+      type: String,
+      default: "GyanNidhi Innovations Pvt. Ltd.",
+      trim: true,
+      maxlength: 160,
+    },
+    salaryRange: { type: String, trim: true, maxlength: 120 },
+    trainingPeriod: { type: String, trim: true, maxlength: 120 },
 
     // Content
-    overview:    { type: String, trim: true, maxlength: 400 },
+    overview: { type: String, trim: true, maxlength: 400 },
     description: { type: String, trim: true, maxlength: 5000 }, // from fullDescription
-    jobRole:     { type: String, trim: true, maxlength: 1500 },
+    jobRole: { type: String, trim: true, maxlength: 1500 },
 
     // Bullets
     requiredSkills: { type: [String], default: [], set: uniqArr },
-    benefits:       { type: [String], default: [], set: uniqArr },
+    benefits: { type: [String], default: [], set: uniqArr },
 
     // Application & tags
     howToApply: { type: String, trim: true, maxlength: 1500 },
 
     // Authoritative tag cloud; mirror to `skills` for back-compat
-    tags:   { type: [String], default: [], set: uniqArr },
+    tags: { type: [String], default: [], set: uniqArr },
     skills: { type: [String], default: [] }, // mirrored from tags ∪ requiredSkills
 
     // Optional
@@ -79,12 +117,12 @@ const JobSchema = new mongoose.Schema(
     // Simple analytics counter
     applications: { type: Number, default: 0 },
 
-    // Optional soft-delete (off by default)
+    // Optional soft-delete
     deletedAt: { type: Date, default: null, index: true },
   },
   {
     timestamps: true,
-    collation: { locale: "en", strength: 2 }, // case-insensitive sorts/queries where applicable
+    collation: { locale: "en", strength: 2 }, // case-insensitive sorts where applicable
     toJSON: {
       virtuals: true,
       versionKey: false,
@@ -117,16 +155,16 @@ JobSchema.pre("save", function (next) {
 // Ensure mirroring on update paths too (preserves other operators)
 JobSchema.pre(["findOneAndUpdate", "updateOne"], function (next) {
   const update = this.getUpdate() || {};
-  const $set   = update.$set || {};
+  const $set = update.$set || {};
   const hasTags = $set.tags !== undefined;
-  const hasReq  = $set.requiredSkills !== undefined;
+  const hasReq = $set.requiredSkills !== undefined;
 
   if (hasTags || hasReq) {
     const mergedTags = uniqArr([
       ...($set.tags || []),
       ...($set.requiredSkills || []),
     ]);
-    $set.tags   = mergedTags;
+    $set.tags = mergedTags;
     $set.skills = mergedTags;
   }
 
@@ -143,7 +181,7 @@ JobSchema.pre(["findOneAndUpdate", "updateOne"], function (next) {
  *  Indexes
  *  ----------------------------- */
 JobSchema.index({ createdAt: -1 });
-JobSchema.index({ type: 1, department: 1, status: 1, published: 1 });
+JobSchema.index({ type: 1, department: 1, status: 1 });
 JobSchema.index({ slug: 1 }, { unique: true, sparse: true });
 
 // Weighted text index for better relevance
@@ -182,17 +220,22 @@ JobSchema.statics.bumpApplications = function (id, n = 1) {
   ).lean();
 };
 
-// Soft delete helper (optional)
+// Soft delete helper – now *only* closes the job; no publish flag
 JobSchema.statics.softDelete = function (id) {
   return this.findByIdAndUpdate(
     id,
-    { $set: { deletedAt: new Date(), published: false, status: "Closed" } },
+    {
+      $set: {
+        deletedAt: new Date(),
+        status: "Closed",
+      },
+    },
     { new: true }
   ).lean();
 };
 
 // Filter out soft-deleted by default (optional global query helper)
-// Usage: Job.findActive().find(…)
+// Usage: Job.find().active()…
 JobSchema.query.active = function () {
   return this.where({ deletedAt: null });
 };

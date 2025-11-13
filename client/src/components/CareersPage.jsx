@@ -43,10 +43,24 @@ const CareersPage = () => {
     return () => window.removeEventListener("jobPosted", handleJobPosted);
   }, []);
 
-  // Type counts for pills
+  // ✅ Only show open jobs on public careers page
+  const openJobs = useMemo(
+    () =>
+      jobs.filter(
+        (j) => sanitize(j?.status || "Open").toLowerCase() === "open"
+      ),
+    [jobs]
+  );
+
+  // ✅ Type counts for pills (only Open jobs)
   const typeCounts = useMemo(() => {
-    const counts = { [TYPE_ALL]: 0, [TYPE_FULL]: 0, [TYPE_PART]: 0, [TYPE_INTERN]: 0 };
-    jobs.forEach((j) => {
+    const counts = {
+      [TYPE_ALL]: 0,
+      [TYPE_FULL]: 0,
+      [TYPE_PART]: 0,
+      [TYPE_INTERN]: 0,
+    };
+    openJobs.forEach((j) => {
       const t = sanitize(j?.type) || TYPE_FULL; // sensible default if missing
       counts[TYPE_ALL] += 1;
       if (t === TYPE_FULL) counts[TYPE_FULL] += 1;
@@ -54,29 +68,37 @@ const CareersPage = () => {
       else if (t === TYPE_INTERN) counts[TYPE_INTERN] += 1;
     });
     return counts;
-  }, [jobs]);
+  }, [openJobs]);
 
+  // ✅ Filters run on openJobs only
   const filteredJobs = useMemo(() => {
     const term = sanitize(searchTerm).toLowerCase();
-    return jobs.filter((job) => {
+    return openJobs.filter((job) => {
       const title = sanitize(job?.title).toLowerCase();
       const dept = sanitize(job?.department).toLowerCase();
       const overview = sanitize(job?.overview).toLowerCase();
       const location = sanitize(job?.location).toLowerCase();
 
       const matchesSearch =
-        !term || title.includes(term) || dept.includes(term) || overview.includes(term) || location.includes(term);
+        !term ||
+        title.includes(term) ||
+        dept.includes(term) ||
+        overview.includes(term) ||
+        location.includes(term);
 
       const type = sanitize(job?.type) || TYPE_FULL;
-      const matchesType = selectedType === TYPE_ALL ? true : type === selectedType;
+      const matchesType =
+        selectedType === TYPE_ALL ? true : type === selectedType;
 
       return matchesSearch && matchesType;
     });
-  }, [jobs, searchTerm, selectedType]);
+  }, [openJobs, searchTerm, selectedType]);
 
   const typeBadgeClass = (type) => {
-    if (type === TYPE_INTERN) return "bg-yellow-50 border-yellow-200 text-yellow-700";
-    if (type === TYPE_PART) return "bg-violet-50 border-violet-200 text-violet-700";
+    if (type === TYPE_INTERN)
+      return "bg-yellow-50 border-yellow-200 text-yellow-700";
+    if (type === TYPE_PART)
+      return "bg-violet-50 border-violet-200 text-violet-700";
     return "bg-blue-50 border-blue-200 text-blue-700"; // Full-time (default)
   };
 
@@ -87,11 +109,21 @@ const CareersPage = () => {
       onClick={onClick}
       aria-pressed={active}
       className={`px-3.5 py-2 rounded-full text-sm font-medium border transition
-        ${active ? "bg-blue-600 text-white border-blue-600 shadow-sm" : "bg-white text-blue-900 border-blue-200 hover:bg-blue-50"}
+        ${
+          active
+            ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+            : "bg-white text-blue-900 border-blue-200 hover:bg-blue-50"
+        }
       `}
     >
       <span>{value}</span>
-      <span className={`ml-2 text-xs ${active ? "text-blue-50" : "text-blue-700/70"}`}>{count}</span>
+      <span
+        className={`ml-2 text-xs ${
+          active ? "text-blue-50" : "text-blue-700/70"
+        }`}
+      >
+        {count}
+      </span>
     </button>
   );
 
@@ -100,10 +132,12 @@ const CareersPage = () => {
       {/* Hero */}
       <section className="relative bg-gradient-to-br from-blue-900 via-blue-800 to-blue-700 text-white py-20">
         <div className="text-center">
-          <h1 className="text-4xl md:text-5xl font-light mb-4 text-blue-50">Build for everyone</h1>
+          <h1 className="text-4xl md:text-5xl font-light mb-4 text-blue-50">
+            Build for everyone
+          </h1>
           <p className="max-w-2xl mx-auto text-lg text-blue-100 mb-10">
-            Join our mission to skill the next generation of E&amp;E talent. Find your
-            next role and help us build products that matter.
+            Join our mission to skill the next generation of E&amp;E talent.
+            Find your next role and help us build products that matter.
           </p>
 
           <div className="flex items-center bg-white/95 backdrop-blur-sm rounded-3xl shadow-lg max-w-xl mx-auto overflow-hidden border border-blue-100/20">
@@ -165,7 +199,9 @@ const CareersPage = () => {
           </div>
 
           {filteredJobs.length === 0 ? (
-            <p className="text-center text-blue-600/70 py-10">No open positions yet. Post one from the HR Dashboard!</p>
+            <p className="text-center text-blue-600/70 py-10">
+              No open positions match your filters.
+            </p>
           ) : (
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
               {filteredJobs.map((job) => {
@@ -173,11 +209,13 @@ const CareersPage = () => {
                 const title = sanitize(job?.title) || "Untitled Role";
                 const department = sanitize(job?.department) || "General";
                 const overview = sanitize(job?.overview);
-                const location = sanitize(job?.location) || "Not specified";
+                const location =
+                  sanitize(job?.location) || "Not specified";
                 const type = sanitize(job?.type) || TYPE_FULL;
                 const duration = sanitize(job?.duration) || ""; // level mapped to duration (for Full-time)
                 const experience = sanitize(job?.experience) || "";
-                const salary = sanitize(job?.salaryRange) || ""; // includes stipend or salary
+                const salary =
+                  sanitize(job?.salaryRange) || ""; // includes stipend or salary
                 const createdAt = job?.createdAt;
 
                 const tagList =
@@ -197,7 +235,11 @@ const CareersPage = () => {
                   >
                     {/* Header row: type pill + NEW badge */}
                     <div className="flex items-center justify-between mb-2">
-                      <span className={`text-xs px-2 py-0.5 rounded-full border ${typeBadgeClass(type)}`}>
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full border ${typeBadgeClass(
+                          type
+                        )}`}
+                      >
                         {type}
                       </span>
                       {isNew(createdAt) && (
@@ -208,29 +250,45 @@ const CareersPage = () => {
                     </div>
 
                     {/* Title */}
-                    <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      {title}
+                    </h3>
 
                     {/* Department link-style */}
                     <div className="mt-1">
-                      <span className="text-blue-600 text-sm font-medium hover:underline">{department}</span>
+                      <span className="text-blue-600 text-sm font-medium hover:underline">
+                        {department}
+                      </span>
                     </div>
 
                     {/* Overview snippet */}
                     {overview && (
-                      <p className="mt-3 text-sm text-gray-600 leading-relaxed line-clamp-3">{overview}</p>
+                      <p className="mt-3 text-sm text-gray-600 leading-relaxed line-clamp-3">
+                        {overview}
+                      </p>
                     )}
 
                     {/* Meta badges */}
                     <div className="mt-4 flex flex-wrap gap-2 text-sm text-gray-700">
-                      {salary && <span className="bg-green-50 text-green-700 px-2 py-0.5 rounded">💰 {salary}</span>}
+                      {salary && (
+                        <span className="bg-green-50 text-green-700 px-2 py-0.5 rounded">
+                          💰 {salary}
+                        </span>
+                      )}
                       {type === TYPE_FULL && duration && (
-                        <span className="bg-gray-100 px-2 py-0.5 rounded">⏳ {duration}</span>
+                        <span className="bg-gray-100 px-2 py-0.5 rounded">
+                          ⏳ {duration}
+                        </span>
                       )}
                       {experience && (
-                        <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded">🎯 {experience}</span>
+                        <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded">
+                          🎯 {experience}
+                        </span>
                       )}
                       {location && (
-                        <span className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded">📍 {location}</span>
+                        <span className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded">
+                          📍 {location}
+                        </span>
                       )}
                     </div>
 
@@ -238,12 +296,17 @@ const CareersPage = () => {
                     {topTags.length > 0 && (
                       <div className="mt-3 flex flex-wrap gap-2">
                         {topTags.map((t, i) => (
-                          <span key={`${t}-${i}`} className="text-xs bg-gray-100 px-2 py-1 rounded">
+                          <span
+                            key={`${t}-${i}`}
+                            className="text-xs bg-gray-100 px-2 py-1 rounded"
+                          >
                             {t}
                           </span>
                         ))}
                         {tagList.length > 4 && (
-                          <span className="text-xs text-gray-500">+{tagList.length - 4} more</span>
+                          <span className="text-xs text-gray-500">
+                            +{tagList.length - 4} more
+                          </span>
                         )}
                       </div>
                     )}
@@ -263,15 +326,41 @@ const CareersPage = () => {
       {/* Spotlight Section */}
       <section className="bg-gray-50 py-20">
         <div className="container mx-auto px-6">
-          <h2 className="text-3xl md:text-4xl font-light text-center mb-14">Why join us?</h2>
+          <h2 className="text-3xl md:text-4xl font-light text-center mb-14">
+            Why join us?
+          </h2>
           <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
             {[
-              { icon: "🌟", title: "Impact at scale", desc: "Build products that have a direct impact on users worldwide." },
-              { icon: "🚀", title: "Innovation first", desc: "Work with cutting-edge technology and push the boundaries of what's possible." },
-              { icon: "🤝", title: "Inclusive culture", desc: "Join a diverse team where everyone's voice is heard." },
-              { icon: "📈", title: "Growth opportunities", desc: "Continuous learning and development opportunities with mentorship." },
-              { icon: "⚖️", title: "Work-life balance", desc: "Flexible working arrangements and a focus on well-being." },
-              { icon: "🌍", title: "Global community", desc: "Collaborate with talented people from around the world." },
+              {
+                icon: "🌟",
+                title: "Impact at scale",
+                desc: "Build products that have a direct impact on users worldwide.",
+              },
+              {
+                icon: "🚀",
+                title: "Innovation first",
+                desc: "Work with cutting-edge technology and push the boundaries of what's possible.",
+              },
+              {
+                icon: "🤝",
+                title: "Inclusive culture",
+                desc: "Join a diverse team where everyone's voice is heard.",
+              },
+              {
+                icon: "📈",
+                title: "Growth opportunities",
+                desc: "Continuous learning and development opportunities with mentorship.",
+              },
+              {
+                icon: "⚖️",
+                title: "Work-life balance",
+                desc: "Flexible working arrangements and a focus on well-being.",
+              },
+              {
+                icon: "🌍",
+                title: "Global community",
+                desc: "Collaborate with talented people from around the world.",
+              },
             ].map((item, idx) => (
               <div
                 key={idx}
@@ -279,7 +368,9 @@ const CareersPage = () => {
               >
                 <div className="text-5xl mb-4">{item.icon}</div>
                 <h3 className="text-lg font-medium mb-2">{item.title}</h3>
-                <p className="text-gray-600 text-sm leading-relaxed">{item.desc}</p>
+                <p className="text-gray-600 text-sm leading-relaxed">
+                  {item.desc}
+                </p>
               </div>
             ))}
           </div>

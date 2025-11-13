@@ -110,7 +110,6 @@ const JobForm = () => {
 
       // Admin
       status: "Open", // Open | Closed
-      published: true,
 
       // Training period (mostly internship)
       trainingPeriod: "",
@@ -242,7 +241,7 @@ const JobForm = () => {
       duration = ""; // not used for internships
     }
 
-    // Build payload
+    // Build payload (no published)
     const payload = {
       title: sanitize(formData.title),
       companyName: "GyanNidhi Innovations Pvt. Ltd.",
@@ -252,7 +251,6 @@ const JobForm = () => {
 
       // Admin
       status: formData.status, // Open | Closed
-      published: !!formData.published,
 
       salaryRange, // formatted string
       duration, // level for full-time only
@@ -290,7 +288,6 @@ const JobForm = () => {
         location: "",
         trainingPeriod: "",
         status: "Open",
-        published: true,
         salaryMin: "",
         salaryMax: "",
         salaryPeriod: "per year",
@@ -577,7 +574,7 @@ const JobForm = () => {
           </div>
         )}
 
-        {/* Status & Published */}
+        {/* Status */}
         <div>
           <label htmlFor="status" className="block text-gray-700 mb-2">
             Status <span className="text-red-500">*</span>
@@ -596,19 +593,6 @@ const JobForm = () => {
             <option value="Closed">Closed</option>
           </select>
           {errors.status && <p className="text-sm text-red-500 mt-1">{errors.status}</p>}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <input
-            id="published"
-            type="checkbox"
-            checked={!!formData.published}
-            onChange={(e) => updateField("published", e.target.checked)}
-            className="h-4 w-4 accent-[#004080]"
-          />
-          <label htmlFor="published" className="text-gray-700">
-            Published
-          </label>
         </div>
 
         {/* ---------- Compensation ---------- */}
@@ -847,7 +831,6 @@ const JobForm = () => {
                 location: "",
                 trainingPeriod: "",
                 status: "Open",
-                published: true,
                 salaryMin: "",
                 salaryMax: "",
                 salaryPeriod: "per year",

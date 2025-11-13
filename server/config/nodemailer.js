@@ -1,23 +1,23 @@
-// config/nodemailer.js
-import nodemailer from "nodemailer";
+import nodemailer from 'nodemailer';
 
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: 'mail.smtp2go.com',
+  port: 2525,               
+  secure: false,            
   auth: {
-    user: process.env.GMAIL,           // e.g. careers@gyannidhi.in
-    pass: process.env.GMAIL_APP_PASS,  // Use App Password (NOT Gmail login password)
+    user:"gyannidhi.in",  
+    pass:"4RCC2zbYPQxPsdpn"
   },
+  connectionTimeout: 60000,
+  socketTimeout: 60000,
+  greetingTimeout: 30000
 });
 
-/**
- * Verify transporter connection on startup
- * Helps catch Gmail auth or less-secure-app issues early.
- */
 transporter.verify((error, success) => {
   if (error) {
-    console.error("❌ Nodemailer setup failed:", error.message);
+    console.error('SMTP2GO verification failed:', error);
   } else {
-    console.log("✅ Nodemailer transporter ready to send emails");
+    console.log('SMTP2GO is ready to send messages');
   }
 });
 

@@ -10,6 +10,7 @@ import DashboardOverview from "./components/DashboardOverview";
 import JobDetail from "./pages/JobDetails";
 import ManageJobs from "./pages/ManageJobs";
 import NewCareer from "./pages/NewCareer";
+import ApplicationsPage from "./pages/ApplicationsPage";
 
 const App = () => {
   return (
@@ -23,6 +24,7 @@ const App = () => {
         <Route path="/job/:id" element={<JobDetail />} />
         <Route path="/manage" element={<ManageJobs />} />
         <Route path="/newcareer" element={<NewCareer />} />
+        <Route path="/applications" element={<ApplicationsPage />} />
       </Route>
 
       {/* Fallback to home */}

@@ -6,6 +6,7 @@ const links = [
   { name: "Create Job", path: "/create-job" },
   { name: "Careers", path: "/careers" },
   { name: "Manage Jobs", path: "/manage" },
+  { name: "Applications", path: "/applications" },
 ];
 
 const Sidebar = ({ open, onToggle }) => {
