@@ -1,11 +1,12 @@
 // src/components/DashboardOverview.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { fetchJobs } from "../services/api";
+import { fetchJobs, fetchApplications } from "../services/api"; // ⬅️ UPDATED
 import { Briefcase, Building2, Users, FileText, Plus, Eye, Settings2 } from "lucide-react";
 
 const sanitize = (s) => (s || "").toString().trim();
-const asArray = (res) => (Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : []);
+const asArray = (res) =>
+  Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : [];
 
 const timeAgo = (iso) => {
   if (!iso) return "";
@@ -44,7 +45,11 @@ const Pill = ({ children, tone = "blue" }) => {
     gray: "bg-gray-50 text-gray-700 border-gray-200",
   };
   return (
-    <span className={`text-xs px-2 py-0.5 rounded-full border ${tones[tone] || tones.gray}`}>
+    <span
+      className={`text-xs px-2 py-0.5 rounded-full border ${
+        tones[tone] || tones.gray
+      }`}
+    >
       {children}
     </span>
   );
@@ -63,18 +68,29 @@ const DashboardOverview = () => {
 
   useEffect(() => {
     const load = async () => {
-      const res = await fetchJobs();
-      const list = asArray(res);
+      // ⬅️ UPDATED: fetch jobs + applications together
+      const [jobsRes, appsRes] = await Promise.all([
+        fetchJobs(),
+        fetchApplications(),
+      ]);
+
+      const list = asArray(jobsRes);
+      const applications = asArray(appsRes); // should already be an array
 
       // total companies (companyName fallback to department)
-      const companies = new Set(list.map((j) => sanitize(j.companyName) || sanitize(j.department)));
-      // open positions (default to open if status missing)
-      const openPositions = list.filter((j) => sanitize(j.status).toLowerCase() !== "closed").length;
-      // applications sum (support alternate field names)
-      const totalApplications = list.reduce(
-        (acc, j) => acc + (Number(j.applications ?? j.applicationCount ?? 0) || 0),
-        0
+      const companies = new Set(
+        list.map(
+          (j) => sanitize(j.companyName) || sanitize(j.department)
+        )
       );
+
+      // open positions (default to open if status missing)
+      const openPositions = list.filter(
+        (j) => sanitize(j.status).toLowerCase() !== "closed"
+      ).length;
+
+      // ⬅️ UPDATED: total applications = number of application documents
+      const totalApplications = applications.length;
 
       setJobs(
         [...list].sort((a, b) => {
@@ -83,6 +99,7 @@ const DashboardOverview = () => {
           return bt - at;
         })
       );
+
       setStats({
         totalCompanies: companies.size,
         totalJobs: list.length,
@@ -90,6 +107,7 @@ const DashboardOverview = () => {
         openPositions,
       });
     };
+
     load();
   }, []);
 
@@ -114,13 +132,19 @@ const DashboardOverview = () => {
     const total = jobs.length || 1;
     const rows = Object.entries(buckets)
       .sort((a, b) => b[1] - a[1])
-      .map(([dept, count]) => ({ dept, count, pct: Math.round((count / total) * 100) }));
+      .map(([dept, count]) => ({
+        dept,
+        count,
+        pct: Math.round((count / total) * 100),
+      }));
     return { rows, total };
   }, [jobs]);
 
   const openClosedPct = useMemo(() => {
     if (!jobs.length) return { open: 0, closed: 0 };
-    const open = jobs.filter((j) => sanitize(j.status).toLowerCase() !== "closed").length;
+    const open = jobs.filter(
+      (j) => sanitize(j.status).toLowerCase() !== "closed"
+    ).length;
     const closed = jobs.length - open;
     const openPct = Math.round((open / jobs.length) * 100);
     const closedPct = 100 - openPct;
@@ -130,10 +154,26 @@ const DashboardOverview = () => {
   const recent = useMemo(() => jobs.slice(0, 6), [jobs]);
 
   const cards = [
-    { title: "Total Active Companies", value: stats.totalCompanies, icon: <Building2 size={28} /> },
-    { title: "Total Jobs Posted", value: stats.totalJobs, icon: <Briefcase size={28} /> },
-    { title: "Applications Received", value: stats.totalApplications, icon: <FileText size={28} /> },
-    { title: "Open Positions", value: stats.openPositions, icon: <Users size={28} /> },
+    {
+      title: "Total Active Companies",
+      value: stats.totalCompanies,
+      icon: <Building2 size={28} />,
+    },
+    {
+      title: "Total Jobs Posted",
+      value: stats.totalJobs,
+      icon: <Briefcase size={28} />,
+    },
+    {
+      title: "Applications Received", // ⬅️ uses applications collection
+      value: stats.totalApplications,
+      icon: <FileText size={28} />,
+    },
+    {
+      title: "Open Positions",
+      value: stats.openPositions,
+      icon: <Users size={28} />,
+    },
   ];
 
   return (
@@ -142,9 +182,12 @@ const DashboardOverview = () => {
         {/* Header */}
         <div className="flex items-start justify-between mb-8">
           <div>
-            <h1 className="text-4xl md:text-5xl font-bold text-[#004080]">Welcome to HR Dashboard</h1>
+            <h1 className="text-4xl md:text-5xl font-bold text-[#004080]">
+              Welcome to HR Dashboard
+            </h1>
             <p className="text-gray-600 mt-2">
-              Snapshot of hiring activity across companies, departments, and job types.
+              Snapshot of hiring activity across companies, departments, and job
+              types.
             </p>
           </div>
 
@@ -178,10 +221,14 @@ const DashboardOverview = () => {
               key={index}
               className="bg-white rounded-2xl shadow-md p-6 border border-gray-200 flex items-center gap-4 hover:shadow-lg transition"
             >
-              <div className="bg-[#004080] text-white p-3 rounded-xl">{card.icon}</div>
+              <div className="bg-[#004080] text-white p-3 rounded-xl">
+                {card.icon}
+              </div>
               <div>
                 <h3 className="text-sm text-gray-600">{card.title}</h3>
-                <p className="text-2xl font-semibold text-black">{card.value}</p>
+                <p className="text-2xl font-semibold text-black">
+                  {card.value}
+                </p>
               </div>
             </div>
           ))}
@@ -195,7 +242,9 @@ const DashboardOverview = () => {
               <Pill tone="blue">Full-time: {byType["Full-time"]}</Pill>
               <Pill tone="amber">Part-time: {byType["Part-time"]}</Pill>
               <Pill tone="green">Internship: {byType["Internship"]}</Pill>
-              {byType["Other"] > 0 && <Pill tone="purple">Other: {byType["Other"]}</Pill>}
+              {byType["Other"] > 0 && (
+                <Pill tone="purple">Other: {byType["Other"]}</Pill>
+              )}
             </div>
             <div className="mt-4 text-sm text-gray-600">
               Total: <span className="font-medium">{stats.totalJobs}</span>
@@ -207,15 +256,22 @@ const DashboardOverview = () => {
             <div className="mb-2">
               <div className="flex justify-between text-sm mb-1">
                 <span className="text-gray-700">Open</span>
-                <span className="text-gray-500">{openClosedPct.open}%</span>
+                <span className="text-gray-500">
+                  {openClosedPct.open}%
+                </span>
               </div>
               <div className="h-2 rounded bg-gray-100 overflow-hidden">
-                <div className="h-2 bg-green-600" style={{ width: `${openClosedPct.open}%` }} />
+                <div
+                  className="h-2 bg-green-600"
+                  style={{ width: `${openClosedPct.open}%` }}
+                />
               </div>
             </div>
             <div className="mt-3 flex justify-between text-sm">
               <span className="text-gray-700">Closed</span>
-              <span className="text-gray-500">{openClosedPct.closed}%</span>
+              <span className="text-gray-500">
+                {openClosedPct.closed}%
+              </span>
             </div>
           </div>
         </div>
@@ -224,13 +280,19 @@ const DashboardOverview = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Department Distribution */}
           <div className="bg-white rounded-2xl border border-gray-200 p-6 lg:col-span-2">
-            <h3 className="text-lg font-semibold mb-4">Departments Distribution</h3>
+            <h3 className="text-lg font-semibold mb-4">
+              Departments Distribution
+            </h3>
             {deptDist.rows.length === 0 ? (
               <p className="text-gray-500 text-sm">No data yet.</p>
             ) : (
               <>
                 {deptDist.rows.slice(0, 8).map((row) => (
-                  <ProgressBar key={row.dept} value={row.pct} label={`${row.dept} • ${row.count}`} />
+                  <ProgressBar
+                    key={row.dept}
+                    value={row.pct}
+                    label={`${row.dept} • ${row.count}`}
+                  />
                 ))}
                 {deptDist.rows.length > 8 && (
                   <p className="text-xs text-gray-500 mt-2">
@@ -262,12 +324,22 @@ const DashboardOverview = () => {
                       onClick={() => navigate(`/job/${id}`)}
                     >
                       <div>
-                        <div className="font-medium text-gray-900">{title}</div>
+                        <div className="font-medium text-gray-900">
+                          {title}
+                        </div>
                         <div className="text-xs text-gray-500">
                           {dept} • {timeAgo(created)}
                         </div>
                       </div>
-                      <Pill tone={type === "Internship" ? "green" : type === "Part-time" ? "amber" : "blue"}>
+                      <Pill
+                        tone={
+                          type === "Internship"
+                            ? "green"
+                            : type === "Part-time"
+                            ? "amber"
+                            : "blue"
+                        }
+                      >
                         {type}
                       </Pill>
                     </li>

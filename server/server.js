@@ -9,11 +9,8 @@ import { fileURLToPath } from "url";
 
 import connectDB from "./config/db.js";
 import jobRoutes from "./routes/jobRoutes.js";
-import applyRoutes from "./routes/applyRoutes.js";
-import applicationRoutes from "./routes/applicationRoutes.js"; // 🔹 NEW: list applications
+import applicationRoutes from "./routes/applicationRoutes.js"; // ✅ single import
 import { notFound, errorHandler } from "./middleware/error.js";
-// Optional: preflight SMTP check (uncomment if wanted)
-// import transporter from "./config/nodemailer.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,7 +33,7 @@ app.use(
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 
-/* ------------------ Simple request logger (helpful for debugging) ------------------ */
+/* ------------------ Simple request logger ------------------ */
 app.use((req, _res, next) => {
   console.log(`--> ${new Date().toISOString()} ${req.method} ${req.originalUrl}`);
   next();
@@ -44,9 +41,9 @@ app.use((req, _res, next) => {
 
 /* ------------------ Static (uploads) ------------------ */
 /**
- * Keep this aligned with applyRoutes:
- *  - applyRoutes default UPLOAD_DIR: <project-root>/server/uploads/resumes
- *  - Here we expose /uploads from <project-root>/server/uploads
+ * Keep this aligned with applicationRoutes:
+ *  - default UPLOAD_DIR: <project-root>/server/uploads/resumes
+ *  - here we expose /uploads from <project-root>/server/uploads
  */
 const DEFAULT_UPLOAD_DIR = path.join(__dirname, "uploads", "resumes");
 const UPLOAD_DIR = process.env.UPLOAD_DIR
@@ -66,8 +63,15 @@ app.use(
 
 /* ------------------ Routes ------------------ */
 app.use("/api/jobs", jobRoutes);
-app.use("/api/apply", applyRoutes);
-app.use("/api/applications", applicationRoutes); // 🔹 for ApplicationsPage in HR dashboard
+
+// ✅ All application-related endpoints share the same router
+// POST /api/apply           → lightweight submit
+// POST /api/apply/submit    → full email submit
+app.use("/api/apply", applicationRoutes);
+
+// ✅ HR dashboard list endpoint
+// GET /api/applications     → getApplications
+app.use("/api/applications", applicationRoutes);
 
 /* ------------------ Health ------------------ */
 app.get("/", (_req, res) => {
@@ -86,13 +90,6 @@ app.use(errorHandler);
 const startServer = async () => {
   try {
     await connectDB();
-
-    // Optional: verify SMTP once at boot for clear logs
-    // transporter
-    //   .verify()
-    //   .then(() => console.log("✅ SMTP ready"))
-    //   .catch((e) => console.error("❌ SMTP error:", e.message));
-
     app.listen(PORT, () =>
       console.log(`✅ MongoDB Connected & 🚀 Server running on port ${PORT}`)
     );

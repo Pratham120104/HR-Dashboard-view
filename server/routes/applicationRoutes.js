@@ -1,4 +1,4 @@
-// server/routes/applyRoutes.js
+// server/routes/applicationRoutes.js
 import express from "express";
 import multer from "multer";
 import path from "path";
@@ -227,9 +227,6 @@ router.post("/", upload.single("resume"), async (req, res) => {
  *
  * If this router is mounted at /api/apply:
  *   POST /api/apply/submit
- *
- * FormData fields:
- *  - fullName, email, phone, why, jobId, jobTitle, resume (file)
  */
 router.post(
   "/submit",
@@ -239,7 +236,6 @@ router.post(
     if (req.body && req.body.why && !req.body.comments) {
       req.body.comments = req.body.why;
     }
-    // (Optional) normalize jobTitle capitalization/length here if needed
     next();
   },
   submitJobApplication
@@ -248,11 +244,11 @@ router.post(
 /**
  * HR dashboard – list applications
  *
- * If this router is mounted at /api:
- *   GET /api/applications
- * If mounted at /api/apply:
- *   GET /api/apply/applications
+ * Mounted at:
+ *   /api/applications  → GET /
+ *   (optionally) /api/apply → GET /applications
  */
-router.get("/applications", getApplications);
+router.get("/", getApplications);              // for GET /api/applications
+router.get("/applications", getApplications);  // optional: GET /api/apply/applications
 
 export default router;

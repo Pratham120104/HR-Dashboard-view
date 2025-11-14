@@ -44,7 +44,6 @@ export const fetchJobs = async (filters = {}) => {
   if (filters.type) params.type = filters.type;
   if (filters.department) params.department = filters.department;
   if (filters.q) params.q = filters.q;
-  // 🔁 no more `published` filter
 
   const { data } = await axios.get(JOBS_ENDPOINT, { params });
   // Server returns either an array (legacy) or an object { data, page, total }
@@ -80,8 +79,6 @@ export const updateJobStatus = async (id, status) => {
   );
   return data;
 };
-
-// ❌ Removed updateJobPublish – no publish feature anymore
 
 // Delete a job
 export const deleteJob = async (id) => {
